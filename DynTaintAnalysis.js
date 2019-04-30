@@ -29,25 +29,15 @@ function shadow(val)
 	return false;//todo???
 }
 
-function addTaintProp(left, right, result)
-{
-	if (typeof actual(left) === "string" &&
-		typeof actual(right) === "string")
-	{
-		return new AnnotatedValue(actual(left) + actual(right), shadow(left).concat(shadow(right)));
-	}
-	throw new Error("does not support concat of non-string");
-}
-
-function binaryTaintProp(left, op, right, result)
+function addTaintProp(left, right, result, op)
 {
 	if (typeof actual(left) == 'number' &&
 		typeof actual(right) == 'number')
 	{
 		var taint_state = shadow(left) || shadow(right);
 
-		process.stdout.write(aleft + ' ' + op + ' ' +
-			aright + ' = ' + result + '; ');
+		process.stdout.write(actual(left) + ' ' + op + ' ' +
+			actual(right) + ' = ' + result + '; ');
 		process.stdout.write(shadow(left) + ' ' + op + ' ' +
 			shadow(right) + ' = ' + taint_state + '\n')
 
@@ -56,14 +46,15 @@ function binaryTaintProp(left, op, right, result)
 		else
 			return result; //eval("left"+op+"right")}
 	}
-	else if (op === '+')
+	else if (typeof actual(left) === "string" &&
+		typeof actual(right) === "string")
 	{
-		return addTaintProp(left, right, result);
+		return new AnnotatedValue(actual(left) + actual(right), shadow(left).concat(shadow(right)));
 	}
-	//todo, other types of operator
-	//todo, many other complex operation
-	throw new Error("currently does not support this binary operation");
+	throw new Error("does not support concat of non-string");
 }
+
+
 function binaryRec(left, right, taintProp, sandbox, iid)
 {
 	if (isTainted(shadow(left)) || isTainted(shadow(right)))
@@ -105,16 +96,18 @@ function TaintAnalysis()
 	this.binaryPre = function(iid, op, left, right)
 	{
 		return {op:op,left:left,right:right,skip:true}
-	}
+	};
 	this.binary = function(iid, op, left, right, result)
 	{
-		process.stdout.write('actual: '+actual)
-		aleft = actual(left);
-		aright = actual(right);
+		var aleft = actual(left);
+		var aright = actual(right);
+		binaryRec(left, right, this.taintProp, sandbox, iid);
+		var ret;
 		switch (op)
 		{
 		case "+":
 			result = aleft + aright;
+			ret = {result: addTaintProp(left, right, result, op)};
 			break;
 		case "-":
 			result = aleft - aright;
@@ -183,9 +176,8 @@ function TaintAnalysis()
 			throw new Error(op + " at " + iid + " not found");
 			break;
 		}
-		binaryRec(left, right, this.taintProp, sandbox, iid);
-		return {result: binaryTaintProp(left, op, right, result)};
-	}
+		return ret;
+	};
 	this.literal = function (iid, val, hasGetterSetter)
 	{
 		if (typeof val === 'function')
@@ -216,7 +208,7 @@ function TaintAnalysis()
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
 		return {f:f, base:base, args:args, skip:true}
-	}
+	};
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
 		process.stdout.write(isConstructor+'!!!!!!!'+f);
@@ -249,13 +241,13 @@ function TaintAnalysis()
 			//if (isConstructor)
 			return {result:f.apply(base, args)};
 		}
-	}
+	};
 	this.getFieldPre = function(iid, base, offset)
 	{
 		//todo, when offset is tainted
 		process.stdout.write(JSON.stringify(base) + ' ' + offset + '\n');
 		return {base:actual(base), offset:actual(offset)};
-	}
+	};
 }
 sandbox.analysis = new TaintAnalysis();
 })(J$);
