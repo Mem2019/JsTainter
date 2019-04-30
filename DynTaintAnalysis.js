@@ -1,3 +1,15 @@
+var config = new (function ()
+{
+	this.ifTaintNaN = true;
+})();
+
+function isNative(func)
+{
+	var expr = /function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/;
+	var res = (''+func).match(expr);
+	return (res !== null && res[0] === ''+func)
+}
+
 function AnnotatedValue(val, shadow)
 {
 	this.val = val;
@@ -7,7 +19,7 @@ function actual(val)
 {
 	return val instanceof AnnotatedValue ? val.val : val;
 }
-function shadow(val)
+function shadow(val, noTaint)
 {
 	if (val instanceof AnnotatedValue)
 	{
@@ -18,50 +30,49 @@ function shadow(val)
 		var ret = [];//todo, optimize to logn
 		for (var i = 0; i < val.length; i++)
 		{
-			ret[i] = false;
+			ret[i] = noTaint;
 		}
 		return ret;
 	}
 	else if (typeof val === 'number')
 	{
-		return false;
+		return noTaint;
 	}
-	return false;//todo???
+	return noTaint;//todo???
 }
 
-function addTaintProp(left, right, result, op)
+
+function addTaintProp(left, right, result, rule, op)
 {
 	if (typeof actual(left) == 'number' &&
 		typeof actual(right) == 'number')
 	{
-		var taint_state = shadow(left) || shadow(right);
+		var taint_state = rule.arithmetic(shadow(left, rule.noTaint), shadow(right, rule.noTaint));
 
 		process.stdout.write(actual(left) + ' ' + op + ' ' +
 			actual(right) + ' = ' + result + '; ');
-		process.stdout.write(shadow(left) + ' ' + op + ' ' +
-			shadow(right) + ' = ' + taint_state + '\n')
+		process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
-		if (taint_state === true)
-			return new AnnotatedValue(result, true);
-		else
-			return result; //eval("left"+op+"right")}
+		return new AnnotatedValue(result, taint_state);
 	}
 	else if (typeof actual(left) === "string" &&
 		typeof actual(right) === "string")
 	{
-		return new AnnotatedValue(actual(left) + actual(right), shadow(left).concat(shadow(right)));
+		return new AnnotatedValue(actual(left) + actual(right),
+			shadow(left, rule.noTaint).concat(shadow(right, rule.noTaint)));
 	}
 	throw new Error("does not support concat of non-string");
 }
 
 
 function binaryRec(left, right, taintProp, sandbox, iid)
-{
-	if (isTainted(shadow(left)) || isTainted(shadow(right)))
+{//todo
+	/*if (isTainted(shadow(left, noTaint)) || isTainted(shadow(right, noTaint)))
 	{
 		taintProp[(sandbox.iidToLocation(
 			sandbox.getGlobalIID(iid)))] = 1;
-	}
+	}*/
 }
 function funcInvokeRec(func, base, args)
 {
@@ -80,18 +91,12 @@ function isTainted(shadow)
 	}
 }
 
-function isNative(func)
-{
-	var expr = /function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/;
-	var res = (''+func).match(expr);
-	return (res !== null && res[0] === ''+func)
-}
-
 
 (function (sandbox)
 {
-function TaintAnalysis()
+function TaintAnalysis(rule)
 {
+
 	this.taintProp = {};
 	this.binaryPre = function(iid, op, left, right)
 	{
@@ -107,7 +112,7 @@ function TaintAnalysis()
 		{
 		case "+":
 			result = aleft + aright;
-			ret = {result: addTaintProp(left, right, result, op)};
+			ret = {result: addTaintProp(left, right, result, rule, op)};
 			break;
 		case "-":
 			result = aleft - aright;
@@ -187,12 +192,12 @@ function TaintAnalysis()
 		//functinon for testing
 		if (val === "ta1nt3d_int")
 		{
-			return {result: new AnnotatedValue(1000, true)}
+			return {result: new AnnotatedValue(1000, rule.fullTaint)}
 		}
 		else if (val === "ta1nt3d_string")
 		{
-			ret = "A";
-			taint = [true];
+			var ret = "A";
+			var taint = [rule.fullTaint];
 			for (var i = 0; i < 8; i++)
 			{
 				ret += ret;
@@ -225,7 +230,7 @@ function TaintAnalysis()
 			var sv;
 			if (f === String.prototype.substr && typeof abase == 'string')
 			{//todo: what if index and size are tainted?
-				sv = shadow(base).slice(aargs[0], aargs[0] + aargs[1]);
+				sv = shadow(base, rule.noTaint).slice(aargs[0], aargs[0] + aargs[1]);
 			}
 			//todo: process other type of native function
 			process.stdout.write("sv " + JSON.stringify(sv));
@@ -249,5 +254,5 @@ function TaintAnalysis()
 		return {base:actual(base), offset:actual(offset)};
 	};
 }
-sandbox.analysis = new TaintAnalysis();
+sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)());
 })(J$);
