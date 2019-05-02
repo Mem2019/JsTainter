@@ -12,3 +12,9 @@ s = s.substr(2, 2);
 var bool = "ta1nt3d_bool";
 s = ''+bool + s;
 s = s.substr(1, s.length);
+
+var arr = [undefined,,bool, a, [3, bool,, c, undefined], undefined];
+s = ''+arr;
+s = s.substr(0, s.length);
+
+//process.stdout.write(s)

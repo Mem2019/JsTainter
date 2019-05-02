@@ -1,6 +1,7 @@
 function Utils(){}
 Utils.prototype.isNative = isNative;
 Utils.prototype.fillArray = fillArray;
+Utils.prototype.assert = require('assert');//todo: node.js
 
 function isNative(func)
 {

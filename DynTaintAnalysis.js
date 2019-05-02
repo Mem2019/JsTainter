@@ -41,6 +41,11 @@ function shadow(val, noTaint)
 
 const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
+//undefined and null in array will not be shown
+//when they are in array
+//and array is converted to string
+const isSolidStrInArr = (val) => typeof val != 'undefined' || val === null;
+
 function getTaintArrayForArray(arr, rule)
 {//pre: Array.isArray(aval)
 	if (arr.length === 0)
@@ -48,16 +53,18 @@ function getTaintArrayForArray(arr, rule)
 	var ret = [];
 	for (var i = 0; i < arr.length - 1; i++)
 	{//iterate except for last element
-		if (typeof arr[i] != 'undefined')
+		if (isSolidStrInArr(arr[i]))
 		{
 			ret = ret.concat(getTaintArray(arr[i], rule));
 		}
-		ret.concat(false);//',' is not tainted
+		ret = ret.concat(false);//',' is not tainted
 	}
-	if (typeof arr[arr.length-1] != 'undefined')
+	if (isSolidStrInArr(arr[i]))
 	{
 		ret = ret.concat(getTaintArray(arr[i], rule));
 	}
+	//Utils.assert(ret.length === (''+arr).length);
+	//cannot be true due to AnnotatedValue Object
 	return ret;
 }
 function getTaintArray(val, rule)
@@ -78,7 +85,7 @@ function getTaintArray(val, rule)
 		case 'boolean':
 		case 'undefined':
 		{
-			return rule.toStringTaint(aval, shadow(val));
+			return rule.toStringTaint(aval, shadow(val, rule.noTaint));
 		}
 		default:
 			throw Error("Currently does not support type \'" + typeof val + "\' for add");
