@@ -41,6 +41,25 @@ function shadow(val, noTaint)
 
 const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
+function getTaintArrayForArray(arr, rule)
+{//pre: Array.isArray(aval)
+	if (arr.length === 0)
+		return [];
+	var ret = [];
+	for (var i = 0; i < arr.length - 1; i++)
+	{//iterate except for last element
+		if (typeof arr[i] != 'undefined')
+		{
+			ret = ret.concat(getTaintArray(arr[i], rule));
+		}
+		ret.concat(false);//',' is not tainted
+	}
+	if (typeof arr[arr.length-1] != 'undefined')
+	{
+		ret = ret.concat(getTaintArray(arr[i], rule));
+	}
+	return ret;
+}
 function getTaintArray(val, rule)
 {//get the taint array when `val` is converted to string
 	var aval = actual(val);
@@ -50,10 +69,10 @@ function getTaintArray(val, rule)
 			return shadow(val, rule.noTaint);
 		case 'object':
 		{
-			//todo: if (Array.isArray(aval))
-			//todo: if === null
-			//When array is converted to string, it should be tainted
-			return Utils.fillArray(rule.noTaint, ('' + aval).length)
+			if (Array.isArray(aval))
+				return getTaintArrayForArray(aval, rule);
+			else //this includes the case where aval === null
+				return Utils.fillArray(rule.noTaint, ('' + aval).length)
 		}
 		case 'number':
 		case 'boolean':
@@ -120,7 +139,6 @@ function isTainted(shadow)
 {
 function TaintAnalysis(rule)
 {
-
 	this.taintProp = {};
 	this.binaryPre = function(iid, op, left, right)
 	{
@@ -211,12 +229,12 @@ function TaintAnalysis(rule)
 	{
 		if (typeof val === 'function')
 		{//sandbox
-			process.stdout.write(''+val)
+			//process.stdout.write(''+val)
 		}
 		//functinon for testing
 		if (val === "ta1nt3d_int")
 		{
-			return {result: new AnnotatedValue(31337, rule.fullTaint)}
+			return {result: new AnnotatedValue(31337, rule.fullTaint)};
 		}
 		else if (val === "ta1nt3d_string")
 		{
@@ -229,6 +247,10 @@ function TaintAnalysis(rule)
 			}
 			return {result: new AnnotatedValue(ret, taint)};
 		}
+		else if (val === "ta1nt3d_bool")
+		{
+			return {result: new AnnotatedValue(true, rule.fullTaint)};
+		}
 	};
 	this.endExecution = function()
 	{
@@ -240,8 +262,6 @@ function TaintAnalysis(rule)
 	};
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
-		process.stdout.write(isConstructor+'!!!!!!!'+f);
-
 		if (Utils.isNative(f))
 		{
 			//convert arguments to actual value
