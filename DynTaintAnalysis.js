@@ -41,9 +41,9 @@ function shadow(val, noTaint)
 
 const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
-//undefined and null in array will not be shown
-//when they are in array
-//and array is converted to string
+/*undefined and null in array will not be shown
+when they are in array,
+and array is converted to string*/
 const isSolidStrInArr = (val) => typeof val != 'undefined' || val === null;
 
 function getTaintArrayForArray(arr, rule)
