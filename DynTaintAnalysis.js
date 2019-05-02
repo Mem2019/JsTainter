@@ -1,14 +1,12 @@
+//todo: --------------nodejs
+const Utils = new (require("./Utils").Utils)();
+//----------nodejs
+
 var config = new (function ()
 {
 	this.ifTaintNaN = true;
 })();
 
-function isNative(func)
-{
-	var expr = /function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/;
-	var res = (''+func).match(expr);
-	return (res !== null && res[0] === ''+func)
-}
 
 function AnnotatedValue(val, shadow)
 {
@@ -41,13 +39,40 @@ function shadow(val, noTaint)
 	return noTaint;//todo???
 }
 
+const numAddTypes = new Set(['undefined', 'boolean', 'number']);
+const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
+function getTaintArray(val, rule)
+{//get the taint array when `val` is converted to string
+	var aval = actual(val);
+	switch(typeof aval)
+	{
+		case 'string':
+			return shadow(val, rule.noTaint);
+		case 'object':
+		{
+			//todo: if (Array.isArray(aval))
+			//todo: if === null
+			//When array is converted to string, it should be tainted
+			return Utils.fillArray(rule.noTaint, ('' + aval).length)
+		}
+		case 'number':
+		case 'boolean':
+		case 'undefined':
+		{
+			return rule.toStringTaint(aval, shadow(val));
+		}
+		default:
+			throw Error("Currently does not support type \'" + typeof val + "\' for add");
+	}
+}
 
 function addTaintProp(left, right, result, rule, op)
 {
-	if (typeof actual(left) == 'number' &&
-		typeof actual(right) == 'number')
-	{
-		var taint_state = rule.arithmetic(shadow(left, rule.noTaint), shadow(right, rule.noTaint));
+	if (isNumAddOperands(actual(left)) &&
+		isNumAddOperands(actual(right)))
+	{//numeric add
+		var taint_state = rule.arithmetic(
+			shadow(left, rule.noTaint), shadow(right, rule.noTaint));
 
 		process.stdout.write(actual(left) + ' ' + op + ' ' +
 			actual(right) + ' = ' + result + '; ');
@@ -56,13 +81,12 @@ function addTaintProp(left, right, result, rule, op)
 
 		return new AnnotatedValue(result, taint_state);
 	}
-	else if (typeof actual(left) === "string" &&
-		typeof actual(right) === "string")
-	{
+	else //if (typeof actual(left) === "string" &&
+		//typeof actual(right) === "string")
+	{//string concatenation
 		return new AnnotatedValue(actual(left) + actual(right),
-			shadow(left, rule.noTaint).concat(shadow(right, rule.noTaint)));
+			getTaintArray(left, rule).concat(getTaintArray(right, rule)));
 	}
-	throw new Error("does not support concat of non-string");
 }
 
 
@@ -192,7 +216,7 @@ function TaintAnalysis(rule)
 		//functinon for testing
 		if (val === "ta1nt3d_int")
 		{
-			return {result: new AnnotatedValue(1000, rule.fullTaint)}
+			return {result: new AnnotatedValue(31337, rule.fullTaint)}
 		}
 		else if (val === "ta1nt3d_string")
 		{
@@ -218,7 +242,7 @@ function TaintAnalysis(rule)
 	{
 		process.stdout.write(isConstructor+'!!!!!!!'+f);
 
-		if (isNative(f))
+		if (Utils.isNative(f))
 		{
 			//convert arguments to actual value
 			var abase = actual(base);
