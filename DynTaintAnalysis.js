@@ -1,5 +1,6 @@
 //todo: --------------nodejs
 const Utils = new (require("./Utils").Utils)();
+const Log = new (require("./Log").Log)();
 //----------nodejs
 
 var config = new (function ()
@@ -97,10 +98,20 @@ function getTaintArrayH(val, rule, outArrs)
 
 function getTaintArray(val, rule)
 {
-	return getTaintArrayH(val, rule, new Array());
+	return getTaintArrayH(val, rule, []);
 }
 
+function CompressTaintArray(val, rule)
+{
+	if (val instanceof AnnotatedValue)
+	{
 
+	}
+	else
+	{
+		return rule.noTaint;
+	}
+}
 
 function addTaintProp(left, right, result, rule, op)
 {
@@ -122,6 +133,43 @@ function addTaintProp(left, right, result, rule, op)
 	{//string concatenation
 		return new AnnotatedValue(actual(left) + actual(right),
 			getTaintArray(left, rule).concat(getTaintArray(right, rule)));
+	}
+}
+
+const numArithTypes = new Set(['boolean', 'number']);
+function alwaysGiveNaN(rawVal, rule)
+{
+	var val = actual(rawVal);
+	var b = typeof val == 'string' && isNaN(Number(val));
+	if (b || isTainted(shadow(rawVal, rule)))
+		Log.log("Tainted String is producing NaN, " +
+			"assuming result to be untainted, " +
+			"change the input to number for higher accuracy");
+	return typeof val == 'object' || b;
+}
+//string that will always produce NaN
+//todo, 'asd' is given, but a number could be given
+//in this case the result NaN should be tainted?
+//if there is a untainted non-numeric char, result is not tainted
+
+function arithTaintProp(left, right, result, rule, op)
+{
+	if (alwaysGiveNaN(left, rule) &&
+		alwaysGiveNaN(right, rule))
+	{
+		return result;//no taint
+	}
+	else
+	{//numeric
+		var taint_state = rule.arithmetic(
+			shadow(left, rule.noTaint), shadow(right, rule.noTaint));
+
+		process.stdout.write(actual(left) + ' ' + op + ' ' +
+			actual(right) + ' = ' + result + '; ');
+		process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
+
+		return new AnnotatedValue(result, taint_state);
 	}
 }
 
@@ -175,15 +223,19 @@ function TaintAnalysis(rule)
 			break;
 		case "-":
 			result = aleft - aright;
+			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "*":
 			result = aleft * aright;
+			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "/":
 			result = aleft / aright;
+			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "%":
 			result = aleft % aright;
+			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "<<":
 			result = aleft << aright;

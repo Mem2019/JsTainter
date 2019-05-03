@@ -25,9 +25,10 @@ for (var t1 in typeVals)
 	print(t1 + ',');
 	for (var t2 in typeVals)
 	{
-		var res = typeVals[t2] - typeVals[t1]
+		var res = typeVals[t2] << typeVals[t1]
 		var type = typeof res;
-		print('\"' + type + ': ' + res + '\",');
+		if (type !== "number") {print("nononono")};
+		print('\"' + res + '\",');
 	}
 	println('');
 }

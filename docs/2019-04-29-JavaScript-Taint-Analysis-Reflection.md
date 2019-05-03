@@ -97,6 +97,8 @@ for (var t1 in typeVals)
 }
 ```
 
+//todo: add a picture
+
 Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` tyoe, so we can regard them as string concatenation. For string concatination, this will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function that takes a value as input and returns the corresponding taint array if that value is converted to string. The argument value does not have to be `actual value` (e.i. can be `AnnotatedValue`). There are serveral cases to consider:
 
 **String**
@@ -230,21 +232,7 @@ Luckily, value in `prototype` will also contribute when an array is converted to
 
 Considering these factors, we can implement the function that obtain the taint array when an JavaScript `Array` is converted to string.
 
-//todo: maybe add some codes here?
-
-
-
-
-
-
-
- 
-
-//todo, handle circular structure
-
-//todo: add a picture
-
-
+//todo: maybe add some codes here? 
 
 ### Binary Arithmetic Operator
 
