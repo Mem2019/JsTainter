@@ -10,6 +10,17 @@ TaintUnit.prototype.arithmetic = function(left, right)
 	return left || right;
 };
 TaintUnit.prototype.toStringTaint = (a,t)=>Utils.fillArray(t, (''+a).length);
+TaintUnit.prototype.isTainted = function (shadow)
+{//todo, make it more generic
+	if (typeof shadow == 'boolean')
+	{
+		return shadow;
+	}
+	else if (Array.isArray(shadow))
+	{
+		return shadow.reduce((a, b) => a || b);
+	}
+}
 
 //todo, make it an array of boolean
 

@@ -236,7 +236,47 @@ Considering these factors, we can implement the function that obtain the taint a
 
 ### Binary Arithmetic Operator
 
-It works fine for numeric operands, but for other types, it becomes hard to analyze. For example, `NaN` will be generated when using arithmetic operator over string, for example `"abc" - "def"` will produce `NaN`. Do we mark the `NaN` to be tainted if these 2 strings are tainted? Also for the case `"789" - "234"`, how do we mark taint state of result?
+It works fine for both operands to be numeric: the result is tainted as long as one of the operands is tainted. But for other types, it becomes hard to analyze. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
+
+//todo: table
+
+It is obvious that as long as one of the operands is `object`, the result is always `NaN`. Since in our design, `Object` instance is never tainted (note: but value inside them could be tainted), the result should also always be untainted as long as one of the operands is `Object`. 
+
+Another possible situation is when the operand is string. When `string` is used as operand of arithmetic operation, it will be converted to number first before doing arithmetic operation except `+`.
+
+```javascript
+> "3"/10
+0.3
+> "3" - "10"
+-7
+> "3" + "10"
+'310'
+```
+
+If the string will be converted to `NaN`, the result will always be `NaN`. The result should not be tainted if the string is always converted to `NaN` no matter how input is changed. My approach to deal with it is to convert all tainted characters to `'0'` or any other number, then try to convert the string to number. If it is still `NaN`, the result should not be tainted, since the result is unaffected by user input; if it becomes a number, the result should be tainted. However, even with such careful design, false positive could still come up. For example:
+
+```javascript
+var b; 
+// `b` is a tainted variable, but is always boolean
+var i;
+// `i` is a tainted variable, but is always integer
+var r = String(b) - i;
+// characters in String(b) are all tainted
+// `r` is always NaN no matter what `b` and `i` are
+// but it will be marked as tainted
+```
+
+Case like this is unavoidable, unfortunately.
+
+If the operands do not always give `NaN`, we apply the arithmetic taint propagation rule: result is tainted as long as one operand is tainted. 
+
+
+
+
+
+Do we mark the `NaN` to be tainted if these 2 strings are tainted? Also for the case `"789" - "234"`, how do we mark taint state of result?
+
+
 
 ### Boolean Operator
 

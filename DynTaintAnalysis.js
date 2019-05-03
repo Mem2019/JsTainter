@@ -136,31 +136,51 @@ function addTaintProp(left, right, result, rule, op)
 	}
 }
 
+const numChar = new Set("0123456789xXabcdefABCDEF.-Infinity");
+function alwaysGiveNaNStr(v, s, rule)
+{//pre: s is string
+	var tmp = "";
+	for (var i = 0; i < v.length; i++)
+	{
+		if (s[i] !== rule.noTaint)
+		{//if tainted, try to convert to number
+			tmp += '0';
+		}
+		else if (!numChar.has(s[i]))
+		{//if not in standard numChar, must be NaN
+			return true;
+		}
+		else
+		{//if it is standard, leave it
+			tmp += s[i];
+		}
+	}
+	return isNaN(Number(tmp));
+}
+
 const numArithTypes = new Set(['boolean', 'number']);
 function alwaysGiveNaN(rawVal, rule)
 {
 	var val = actual(rawVal);
-	var b = typeof val == 'string' && isNaN(Number(val));
-	if (b || isTainted(shadow(rawVal, rule)))
+	var s = shadow(rawVal, rule);
+	var b = typeof val == 'string' && alwaysGiveNaNStr(val, s, rule);
+	/*if (b || rule.isTainted(s))
 		Log.log("Tainted String is producing NaN, " +
 			"assuming result to be untainted, " +
-			"change the input to number for higher accuracy");
+			"change the input to number for higher accuracy");*/
 	return typeof val == 'object' || b;
 }
 //string that will always produce NaN
-//todo, 'asd' is given, but a number could be given
-//in this case the result NaN should be tainted?
-//if there is a untainted non-numeric char, result is not tainted
 
 function arithTaintProp(left, right, result, rule, op)
 {
-	if (alwaysGiveNaN(left, rule) &&
+	if (alwaysGiveNaN(left, rule) ||
 		alwaysGiveNaN(right, rule))
 	{
 		return result;//no taint
 	}
 	else
-	{//numeric
+	{//might still be false positive if s == 'true'
 		var taint_state = rule.arithmetic(
 			shadow(left, rule.noTaint), shadow(right, rule.noTaint));
 
@@ -187,17 +207,7 @@ function funcInvokeRec(func, base, args)
 
 }
 
-function isTainted(shadow)
-{
-	if (typeof shadow == 'boolean')
-	{
-		return shadow;
-	}
-	else if (Array.isArray(shadow))
-	{
-		return shadow.reduce((a, b) => a || b);
-	}
-}
+
 
 
 (function (sandbox)
