@@ -14,6 +14,11 @@ s = ''+bool + s;
 s = s.substr(1, s.length);
 
 var arr = [undefined,,bool, a, [3, bool,, c, undefined], undefined];
+arr[1] = arr;
+arr[4][2] = arr;
+arr[4][2] = arr;
+arr[4][5] = arr[4];
+//circular structure
 s = ''+arr;
 s = s.substr(0, s.length);
 

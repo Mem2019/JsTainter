@@ -44,30 +44,33 @@ const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
 /*undefined and null in array will not be shown
 when they are in array,
 and array is converted to string*/
-const isSolidStrInArr = (val) => typeof val != 'undefined' || val === null;
+const isSolidStrInArr = (val, outArrs) => typeof val != 'undefined'
+	&& val !== null && outArrs.indexOf(val) === -1;
 
-function getTaintArrayForArray(arr, rule)
+function getTaintArrayForArray(arr, rule, outArrs)
 {//pre: Array.isArray(aval)
 	if (arr.length === 0)
 		return [];
+	outArrs.push(arr);
 	var ret = [];
 	for (var i = 0; i < arr.length - 1; i++)
 	{//iterate except for last element
-		if (isSolidStrInArr(arr[i]))
+		if (isSolidStrInArr(actual(arr[i]), outArrs))
 		{
-			ret = ret.concat(getTaintArray(arr[i], rule));
+			ret = ret.concat(getTaintArrayH(arr[i], rule, outArrs));
 		}
 		ret = ret.concat(false);//',' is not tainted
 	}
-	if (isSolidStrInArr(arr[i]))
+	if (isSolidStrInArr(actual(arr[i]), outArrs))
 	{
-		ret = ret.concat(getTaintArray(arr[i], rule));
+		ret = ret.concat(getTaintArrayH(arr[i], rule, outArrs));
 	}
 	//Utils.assert(ret.length === (''+arr).length);
 	//cannot be true due to AnnotatedValue Object
+	outArrs.pop();
 	return ret;
 }
-function getTaintArray(val, rule)
+function getTaintArrayH(val, rule, outArrs)
 {//get the taint array when `val` is converted to string
 	var aval = actual(val);
 	switch(typeof aval)
@@ -77,7 +80,7 @@ function getTaintArray(val, rule)
 		case 'object':
 		{
 			if (Array.isArray(aval))
-				return getTaintArrayForArray(aval, rule);
+				return getTaintArrayForArray(aval, rule, outArrs);
 			else //this includes the case where aval === null
 				return Utils.fillArray(rule.noTaint, ('' + aval).length)
 		}
@@ -91,6 +94,13 @@ function getTaintArray(val, rule)
 			throw Error("Currently does not support type \'" + typeof val + "\' for add");
 	}
 }
+
+function getTaintArray(val, rule)
+{
+	return getTaintArrayH(val, rule, new Array());
+}
+
+
 
 function addTaintProp(left, right, result, rule, op)
 {
@@ -301,7 +311,7 @@ function TaintAnalysis(rule)
 	this.getFieldPre = function(iid, base, offset)
 	{
 		//todo, when offset is tainted
-		process.stdout.write(JSON.stringify(base) + ' ' + offset + '\n');
+		process.stdout.write((base) + ' ' + offset + '\n');
 		return {base:actual(base), offset:actual(offset)};
 	};
 }

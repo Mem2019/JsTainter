@@ -117,7 +117,128 @@ The num must be a `number` type, and attacker can control it by controlling vari
 
 **Array**
 
-When array is converted to string, every element //todo
+When array is converted to string, every element is converted to string, and joined using `','`, for example
+
+```javascript
+> ''+[{a:1},1,"test", true, [1,4]]
+'[object Object],1,test,true,1,4'
+```
+
+`{a:1}`, `1`, `"test"`, `true` and `[1,4]` are converted to string, then joined with `','` as separator. Note that the conversion of `[1,4]` to string is done recursively using the same way as the conversion of outter array.
+
+However, there are serveral special cases to note. *Firstly*, array can also has `string` type as the key just like map type.
+
+```javascript
+> var a = []
+undefined
+> a[0] = 1
+1
+> a[1] = 2
+2
+> a[-1] = -2
+-2
+> a["key"] = "test"
+'test'
+> a[a] = 5
+5
+> a[{}] = 'obj'
+'obj'
+> a[10000000000000000000000000000000000000000000000000000000]='big'
+'big'
+> a[0.1] = 0.1
+0.1
+> a
+[ 1,
+  2,
+  '-1': -2,
+  key: 'test',
+  '1,2': 5,
+  '[object Object]': 'obj',
+  '1e+55': 'big',
+  '0.1': 0.1 ]
+> ''+a
+'1,2'
+```
+
+However, as shown clearly above, these value bounded with `string` key will not contribute when the array is converted to `string`, and any type other than positive small integer will be converted to `string` as key.
+
+*Secondly*, `null`, `undefined` and circular reference will not be converted to string, but will be an empty string.
+
+```javascript
+> var a = []
+undefined
+> a
+[]
+> a[0] = "first"
+'first'
+> a[2] = "2"
+'2'
+> a[3] = undefined
+undefined
+> a[4] = "4th"
+'4th'
+> a[5] = null
+null
+> a[6] = 'six'
+'six'
+> a[7] = a
+[ 'first', , '2', undefined, '4th', null, 'six', [Circular] ]
+> a
+[ 'first', , '2', undefined, '4th', null, 'six', [Circular] ]
+> ''+a
+'first,,2,,4th,,six,'
+```
+
+If the index is never assigned or has value `undefined`, `null` or circular reference, it will simply be converted to empty string. The way to define circular structure is when an element is the reference to any outter arrays, for example:
+
+```javascript
+> a = []
+[]
+> a[0] = []
+[]
+> a[0][0] = a
+[ [ [Circular] ] ]
+> a[0][1] = a[0]
+[ [ [Circular] ], [Circular] ]
+> a
+[ [ [Circular], [Circular] ] ]
+// first circular is `a`, second circular is `a[0]`
+```
+
+*Thirdly*, we need to note `Array.prototype`. Assigning value to prototype is also a way to set the index of array, but this is for all `Array` instances.
+
+```javascript
+> var a = []
+undefined
+> Array.prototype
+[]
+> Array.prototype[0] = 1
+1
+> a.length
+0
+> ''+a
+''
+> a[2] = 2
+2
+> a.length
+3
+> ''+a
+'1,,2'
+```
+
+Luckily, value in `prototype` will also contribute when an array is converted to string, but only if within the range of `a.length`. Therefore, this does not affect our implementation so much. 
+
+Considering these factors, we can implement the function that obtain the taint array when an JavaScript `Array` is converted to string.
+
+//todo: maybe add some codes here?
+
+
+
+
+
+
+
+ 
 
 //todo, handle circular structure
 
