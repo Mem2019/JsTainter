@@ -1,0 +1,11 @@
+var a = "ta1nt3d_int";
+var b = '' + a;
+var hex = '0x' + b;
+var flt = '0.' + b;
+var wrong = '0..' + b;
+var r = hex - 0;
+r = flt - 0;
+r = wrong - 0;
+// hex.substr(0, hex.length);
+// flt.substr(0, flt.length);
+// wrong.substr(0, wrong.length);

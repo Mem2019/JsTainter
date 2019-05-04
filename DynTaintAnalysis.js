@@ -146,13 +146,13 @@ function alwaysGiveNaNStr(v, s, rule)
 		{//if tainted, try to convert to number
 			tmp += '0';
 		}
-		else if (!numChar.has(s[i]))
+		else if (!numChar.has(v[i]))
 		{//if not in standard numChar, must be NaN
 			return true;
 		}
 		else
 		{//if it is standard, leave it
-			tmp += s[i];
+			tmp += v[i];
 		}
 	}
 	return isNaN(Number(tmp));
