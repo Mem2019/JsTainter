@@ -270,13 +270,28 @@ Case like this is unavoidable, unfortunately.
 
 If the operands do not always give `NaN`, we apply the arithmetic taint propagation rule: result is tainted as long as one operand is tainted. 
 
+### Shift operator
 
+In the shift operator, the value that would be evaluated to `NaN` will be regarded as `0`.
 
+```javascript
+> 123 << "asc"
+123
+> "asc" << 42
+0
+> 123 << {}
+123
+> 123 << [1] //todo, this case seems to also works for arith
+246
+> 123 << [1,2]
+123
+```
 
+Here is the table that shows all possible combinations of different types.
 
-Do we mark the `NaN` to be tainted if these 2 strings are tainted? Also for the case `"789" - "234"`, how do we mark taint state of result?
+//todo add table
 
-
+Therefore, as long as LHS will be evaluated to `NaN`, the result is untainted; otherwise, the result is tainted according to arithmetic operation rule.
 
 ### Boolean Operator
 

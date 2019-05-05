@@ -9,3 +9,4 @@ r = wrong - 0;
 // hex.substr(0, hex.length);
 // flt.substr(0, flt.length);
 // wrong.substr(0, wrong.length);
+var a = "2019" && "9102";

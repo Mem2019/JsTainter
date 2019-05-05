@@ -212,7 +212,20 @@ function shiftTaintProp(left, right, result, rule, op)
 
 		return new AnnotatedValue(result, taint_state);
 	}
+}
 
+function cmpTaintProp(left, right, result, rule, op)
+{//todo, consider more cases to improve accuracy
+	var taint_state = rule.arithmetic(
+	rule.compressTaint(shadow(left, rule.noTaint)),
+	rule.compressTaint(shadow(right, rule.noTaint)));
+
+	process.stdout.write(actual(left) + ' ' + op + ' ' +
+		actual(right) + ' = ' + result + '; ');
+	process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+		shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
+
+	return new AnnotatedValue(result, taint_state);
 }
 
 
@@ -283,36 +296,47 @@ function TaintAnalysis(rule)
 			break;
 		case "<":
 			result = aleft < aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">":
 			result = aleft > aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "<=":
 			result = aleft <= aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">=":
 			result = aleft >= aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "==":
 			result = aleft == aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!=":
 			result = aleft != aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "===":
 			result = aleft === aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!==":
 			result = aleft !== aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "&":
 			result = aleft & aright;
+			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "|":
 			result = aleft | aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "^":
 			result = aleft ^ aright;
+			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "delete":
 			result = delete aleft[aright];
