@@ -10,7 +10,7 @@ TaintUnit.prototype.arithmetic = function(left, right)
 	return left || right;
 };
 TaintUnit.prototype.toStringTaint = (a,t)=>Utils.fillArray(t, (''+a).length);
-TaintUnit.prototype.isTainted = function (shadow)
+TaintUnit.prototype.compressTaint = function (shadow)
 {//todo, make it more generic
 	if (typeof shadow == 'boolean')
 	{
@@ -20,7 +20,15 @@ TaintUnit.prototype.isTainted = function (shadow)
 	{
 		return shadow.reduce((a, b) => a || b);
 	}
-}
+};
+// TaintUnit.prototype.compressTaint = function(s)
+// {
+// 	if (Array.isArray(s))
+// 	{
+//
+// 	}
+// };
+
 
 //todo, make it an array of boolean
 

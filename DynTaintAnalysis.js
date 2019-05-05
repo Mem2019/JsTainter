@@ -101,18 +101,6 @@ function getTaintArray(val, rule)
 	return getTaintArrayH(val, rule, []);
 }
 
-function CompressTaintArray(val, rule)
-{
-	if (val instanceof AnnotatedValue)
-	{
-
-	}
-	else
-	{
-		return rule.noTaint;
-	}
-}
-
 function addTaintProp(left, right, result, rule, op)
 {
 	if (isNumAddOperands(actual(left)) &&
@@ -168,9 +156,13 @@ function alwaysGiveNaN(rawVal, rule)
 		Log.log("Tainted String is producing NaN, " +
 			"assuming result to be untainted, " +
 			"change the input to number for higher accuracy");*/
-	return typeof val == 'object' || b;
+	return (typeof val == 'object' && val !== null) ||
+		typeof val == 'undefined' || b;
 }
 //string that will always produce NaN
+
+
+
 
 function arithTaintProp(left, right, result, rule, op)
 {
@@ -182,7 +174,8 @@ function arithTaintProp(left, right, result, rule, op)
 	else
 	{//might still be false positive if s == 'true'
 		var taint_state = rule.arithmetic(
-			shadow(left, rule.noTaint), shadow(right, rule.noTaint));
+			rule.compressTaint(shadow(left, rule.noTaint)),
+			rule.compressTaint(shadow(right, rule.noTaint)));
 
 		process.stdout.write(actual(left) + ' ' + op + ' ' +
 			actual(right) + ' = ' + result + '; ');
@@ -191,6 +184,35 @@ function arithTaintProp(left, right, result, rule, op)
 
 		return new AnnotatedValue(result, taint_state);
 	}
+}
+
+function isTaintAsNum(val, rule)
+{
+	if (alwaysGiveNaN(val, rule))
+		return false;
+	return rule.isTainted(shadow(val));
+}
+
+function shiftTaintProp(left, right, result, rule, op)
+{
+	if (alwaysGiveNaN(left, rule))
+	{//if LHS is always NaN, result is always 0
+		return result;
+	}
+	else
+	{//might still be false positive if s == 'true'
+		var taint_state = rule.arithmetic(
+			rule.compressTaint(shadow(left, rule.noTaint)),
+			rule.compressTaint(shadow(right, rule.noTaint)));
+
+		process.stdout.write(actual(left) + ' ' + op + ' ' +
+			actual(right) + ' = ' + result + '; ');
+		process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
+
+		return new AnnotatedValue(result, taint_state);
+	}
+
 }
 
 
@@ -249,12 +271,15 @@ function TaintAnalysis(rule)
 			break;
 		case "<<":
 			result = aleft << aright;
+			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>":
 			result = aleft >> aright;
+			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>>":
 			result = aleft >>> aright;
+			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case "<":
 			result = aleft < aright;
