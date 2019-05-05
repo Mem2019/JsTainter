@@ -1,6 +1,7 @@
 //todo: --------------nodejs
 const Utils = new (require("./Utils").Utils)();
 const Log = new (require("./Log").Log)();
+const assert = require("assert");
 //----------nodejs
 
 var config = new (function ()
@@ -38,6 +39,23 @@ function shadow(val, noTaint)
 		return noTaint;
 	}
 	return noTaint;//todo???
+}
+
+function assertTaint(val, taint, rule)
+{
+	var s = shadow(val, rule);
+	if (Array.isArray(s))
+	{
+		assert(s.length === taint.length);
+		for (var i = 0; i < s.length; i++)
+		{
+			assert(s[i] === taint[i]);
+		}
+	}
+	else
+	{
+		assert(s === taint);
+	}
 }
 
 const numAddTypes = new Set(['undefined', 'boolean', 'number']);
@@ -242,7 +260,21 @@ function funcInvokeRec(func, base, args)
 
 }
 
-
+function taintAll(val)
+{
+	if (typeof val == 'object')
+	{//todo: should we change strategy
+		ret = Array.isArray(val) ? [] : {};
+		for (var k in val)
+		{
+			taintAll(val[k]);
+		}
+	}
+}
+function untaintAll()
+{
+	//todo
+}
 
 
 (function (sandbox)
@@ -327,7 +359,7 @@ function TaintAnalysis(rule)
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "&":
-			result = aleft & aright;
+			result = aleft & aright;//todo: imprive accracy
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "|":
@@ -340,12 +372,15 @@ function TaintAnalysis(rule)
 			break;
 		case "delete":
 			result = delete aleft[aright];
+			ret = {result: result};
 			break;
 		case "instanceof":
 			result = aleft instanceof aright;
+			ret = {result: result};
 			break;
 		case "in":
 			result = aleft in aright;
+			ret = {result: result};
 			break;
 		default:
 			throw new Error(op + " at " + iid + " not found");
@@ -360,19 +395,15 @@ function TaintAnalysis(rule)
 			//process.stdout.write(''+val)
 		}
 		//functinon for testing
-		if (val === "ta1nt3d_int")
+		if (val.substr(0, 11) === "ta1nt3d_int")
 		{
-			return {result: new AnnotatedValue(31337, rule.fullTaint)};
+			return {result: new AnnotatedValue(
+				Number(val.substr(11)), rule.fullTaint)};
 		}
-		else if (val === "ta1nt3d_string")
+		else if (val.substr(0, 14) === "ta1nt3d_string")
 		{
-			var ret = "A";
-			var taint = [rule.fullTaint];
-			for (var i = 0; i < 8; i++)
-			{
-				ret += ret;
-				taint = taint.concat(taint);
-			}
+			var ret = val.substr(14);
+			var taint = Utils.fillArray(rule.fullTaint, ret.length);
 			return {result: new AnnotatedValue(ret, taint)};
 		}
 		else if (val === "ta1nt3d_bool")
@@ -390,6 +421,8 @@ function TaintAnalysis(rule)
 	};
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
+		//todo: to remove, for test only
+		if (f.name === 'assertTaint') assertTaint(args[0], args[1], rule);
 		if (Utils.isNative(f))
 		{
 			//convert arguments to actual value
@@ -403,6 +436,13 @@ function TaintAnalysis(rule)
 			if (f === String.prototype.substr && typeof abase == 'string')
 			{//todo: what if index and size are tainted?
 				sv = shadow(base, rule.noTaint).slice(aargs[0], aargs[0] + aargs[1]);
+			}
+			if (f === Number)
+			{
+				if (!alwaysGiveNaN(args[0], rule))
+				{
+					sv = rule.compressTaint(shadow(args[0], rule.noTaint));
+				}
 			}
 			//todo: process other type of native function
 			process.stdout.write("sv " + JSON.stringify(sv));

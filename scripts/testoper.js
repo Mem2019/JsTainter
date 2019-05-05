@@ -14,7 +14,7 @@ var typeVals = {str : "abc", numstr : "123", num : 123,
 const print = (s)=>process.stdout.write(''+s);
 const println = (s)=>print(s+'\n');
 
-print('\"\",')
+print('\"\",');
 for (var t2 in typeVals)
 {
 	print('\"' + t2 + '\",');

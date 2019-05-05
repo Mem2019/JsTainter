@@ -322,3 +322,9 @@ todo, there are some wired behavior
 ### SandBox
 
 What if the codes being analyzed is malicious and want to gain previlidge? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
+
+# Test
+
+To have proper software engineering design, I have written test cases to ensure the analysis is running correctly. However, the approach to test is somewhat different from normal program. Since the `JsTainter` heavily relies on `Jalangi2` framework, it's quite hard to simply import the taint analysis unit and perform unit testing only on that unit. The reason is that `Jalangi2` has done many things for `JsTainter`, and `JsTainter` does not work without this framework.
+
+Therefore, instead, I have formulated a way to perform testing. Since I can instrument the JavaScript program that the analysis is running on 
