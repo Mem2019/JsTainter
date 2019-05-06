@@ -351,3 +351,6 @@ if (f === 'assertTaint')
 
 Note that these 2 pieces of codes are in different files. The first code piece is in the JavaScript file that is going to be analyzed (e.i. `test.js`); while the second code piece is in the file that performs the dynamic taint analysis (e.i. `DynTaintAnalysis.js`) . Therefore, even if we have same `assertTaint` name as identifier in both files, there will not be any conflict.
 
+//todo: taint analysis for other operations, e.g. getfield, other native functions, e.g. String/Numer methods
+
+//todo: logs, behavior according to configs, records

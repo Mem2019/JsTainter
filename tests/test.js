@@ -196,6 +196,10 @@ assertTaint(taintedInt - [1,2], false);
 assertTaint(taintedInt - new Number(0), true)
 assertTaint(taintedStr - new Number(0), true)
 
+
+//test more substr
+taintedStr = "ta1nt3d_stringAAAAAAAA";
+tai
 //var o = {a:1};
 /*
 todo:

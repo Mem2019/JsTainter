@@ -279,20 +279,61 @@ function TaintAnalysis(rule)
 
 	}
 
-	function taintAll(val)
+	function taintAllH(val, outArrs)
 	{
 		if (typeof val == 'object')
 		{//todo: should we change strategy
 			ret = Array.isArray(val) ? [] : {};
 			for (var k in val)
 			{
-				taintAll(val[k]);
+				taintAllH(val[k]);
 			}
 		}
 	}
-	function untaintAll()
+	function stripTaintsH(val, outArrs)
 	{
-		//todo
+		var aval = actual(val);
+
+		if (typeof aval == 'object')
+		{
+			assert(aval === val);
+			outArrs.push(aval);
+			var taints = {};
+			for (var k in aval)
+			{
+				if (outArrs.indexOf(val[k]) === -1)
+				{
+					taints[k] = shadow(val[k]);
+					val[k] = stripTaintsH(val[k], outArrs);
+				}
+			}
+			outArrs.pop();
+			return {taints:taints, values:val};
+		}
+		else
+		{
+			return {taints:shadow(val), values:actual(val)};
+		}
+	}
+
+	function stripTaints(val)
+	{
+		return stripTaintsH(val, []);
+	}
+
+	function mergeTaints(val, taints)
+	{//pre: val and taints come from stripTaints function
+		if (typeof taints == 'object' && !Array.isArray(taints))
+		{
+			for (var k in taints)
+			{
+				val[k] = mergeTaints(val[k], taints[k])
+			}
+		}
+		else
+		{
+			return new AnnotatedValue(val, taints);
+		}
 	}
 
 	function andTaintProp(left, right, result, op)
@@ -480,7 +521,7 @@ function TaintAnalysis(rule)
 			var sv;
 			if (f === String.prototype.substr && typeof abase == 'string')
 			{//todo: what if index and size are tainted?
-				sv = shadow(base, rule.noTaint).slice(aargs[0], aargs[0] + aargs[1]);
+				sv = getTaintArray(base).slice(aargs[0], aargs[0] + aargs[1]);
 			}
 			if (f === Number)
 			{
