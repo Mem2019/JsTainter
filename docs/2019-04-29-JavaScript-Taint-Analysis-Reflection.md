@@ -327,4 +327,27 @@ What if the codes being analyzed is malicious and want to gain previlidge? e.g. 
 
 To have proper software engineering design, I have written test cases to ensure the analysis is running correctly. However, the approach to test is somewhat different from normal program. Since the `JsTainter` heavily relies on `Jalangi2` framework, it's quite hard to simply import the taint analysis unit and perform unit testing only on that unit. The reason is that `Jalangi2` has done many things for `JsTainter`, and `JsTainter` does not work without this framework.
 
-Therefore, instead, I have formulated a way to perform testing. Since I can instrument the JavaScript program that the analysis is running on 
+Therefore, instead, I have formulated a way to perform testing. Since we can instrument the JavaScript program that the analysis is running on, we can instrument on function call to perform our assertion.
+
+```javascript
+var a; //something whose taint state is to be examined
+const assertTaint = "assertTaint";
+assertTaint(a, true);
+```
+
+The codes above will simply throw an exception in normal execution. However, if it is instrumented by our analysis program, we can examine the value of `function` parameter in the function call instrumentation callback. This value should be a `function` type variable in normal case, but if it is a `string` type variable and has value `"assertTaint"`, then we know we are going to perform assertion against the taint state of given variable, instead of executing the function call that will throw the error.
+
+```javascript
+function assertTaint(val, taint)
+{
+	//...implement the assertion logic here
+}
+//in the instrumentation callback handler of function call
+if (f === 'assertTaint')
+{
+	assertTaint(args[0], args[1]);
+}
+```
+
+Note that these 2 pieces of codes are in different files. The first code piece is in the JavaScript file that is going to be analyzed (e.i. `test.js`); while the second code piece is in the file that performs the dynamic taint analysis (e.i. `DynTaintAnalysis.js`) . Therefore, even if we have same `assertTaint` name as identifier in both files, there will not be any conflict.
+

@@ -462,10 +462,11 @@ function TaintAnalysis(rule)
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
 		//todo: to remove, for test only
-		if (f.name === 'assertTaint')
+		if (f === 'assertTaint')
 		{
 			assertTaint(args[0], args[1], rule,
 				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
+			return {result : undefined};
 		}
 		if (Utils.isNative(f))
 		{

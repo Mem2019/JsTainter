@@ -1,4 +1,4 @@
-function assertTaint(val, state){}
+const assertTaint = "assertTaint";
 var taintedInt = "ta1nt3d_int31337";
 var taintedStr = "ta1nt3d_stringAAAA";
 //test arithmetic add
@@ -191,6 +191,10 @@ assertTaint(taintedInt - ({}), false);
 assertTaint(taintedInt - ({a : 1}), false);
 assertTaint(taintedInt - [1], true);
 assertTaint(taintedInt - [1,2], false);
+
+//test Number
+assertTaint(taintedInt - new Number(0), true)
+assertTaint(taintedStr - new Number(0), true)
 
 //var o = {a:1};
 /*
