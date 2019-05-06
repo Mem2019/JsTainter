@@ -41,20 +41,29 @@ function shadow(val, noTaint)
 	return noTaint;//todo???
 }
 
-function assertTaint(val, taint, rule)
+function assertTaint(val, taint, rule, position)
 {
-	var s = shadow(val, rule);
+	function myAssert(b)
+	{
+		if (!b)
+		{
+			process.stdout.write("Assertion failure at" + position);
+			assert(false);
+		}
+	}
+	var s = shadow(val, rule.noTaint);
+	myAssert(typeof s === typeof taint);
 	if (Array.isArray(s))
 	{
-		assert(s.length === taint.length);
+		myAssert(s.length === taint.length);
 		for (var i = 0; i < s.length; i++)
 		{
-			assert(s[i] === taint[i]);
+			myAssert(s[i] === taint[i]);
 		}
 	}
 	else
 	{
-		assert(s === taint);
+		myAssert(s === taint);
 	}
 }
 
@@ -142,7 +151,7 @@ function addTaintProp(left, right, result, rule, op)
 	}
 }
 
-const numChar = new Set("0123456789xXabcdefABCDEF.-Infinity");
+const numChar = new Set("0123456789xXabcdefABCDEF.-InfinityNaN");
 function alwaysGiveNaNStr(v, s, rule)
 {//pre: s is string
 	var tmp = "";
@@ -168,14 +177,16 @@ const numArithTypes = new Set(['boolean', 'number']);
 function alwaysGiveNaN(rawVal, rule)
 {
 	var val = actual(rawVal);
-	var s = shadow(rawVal, rule);
-	var b = typeof val == 'string' && alwaysGiveNaNStr(val, s, rule);
+	var s = shadow(rawVal, rule.noTaint);
+	var t = typeof val;
+	var b = (t === 'string') && alwaysGiveNaNStr(val, s, rule);
 	/*if (b || rule.isTainted(s))
 		Log.log("Tainted String is producing NaN, " +
 			"assuming result to be untainted, " +
 			"change the input to number for higher accuracy");*/
-	return (typeof val == 'object' && val !== null) ||
-		typeof val == 'undefined' || b;
+	return (t === 'object' && val !== null &&
+		alwaysGiveNaNStr(''+val, rule.toStringTaint(val, s), rule)) ||
+		t === 'undefined' || b || (t === 'number' && isNaN(val));
 }
 //string that will always produce NaN
 
@@ -211,9 +222,13 @@ function isTaintAsNum(val, rule)
 	return rule.isTainted(shadow(val));
 }
 
+const isZeroInBitOper = (v, rule) =>
+	v === null || alwaysGiveNaN(v, rule) ||
+	(typeof v == "number" && (isNaN(v) || v === 0));
+
 function shiftTaintProp(left, right, result, rule, op)
 {
-	if (alwaysGiveNaN(left, rule))
+	if (isZeroInBitOper(left, rule))
 	{//if LHS is always NaN, result is always 0
 		return result;
 	}
@@ -274,6 +289,28 @@ function taintAll(val)
 function untaintAll()
 {
 	//todo
+}
+
+function andTaintProp(left, right, result, rule, op)
+{
+	if (isZeroInBitOper(left, rule) ||
+		 isZeroInBitOper(right, rule))
+	{
+		return result;
+	}
+	else
+	{
+		var taint_state = rule.arithmetic(
+		rule.compressTaint(shadow(left, rule.noTaint)),
+		rule.compressTaint(shadow(right, rule.noTaint)));
+
+		process.stdout.write(actual(left) + ' ' + op + ' ' +
+			actual(right) + ' = ' + result + '; ');
+		process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
+
+		return new AnnotatedValue(result, taint_state);
+	}
 }
 
 
@@ -360,7 +397,7 @@ function TaintAnalysis(rule)
 			break;
 		case "&":
 			result = aleft & aright;//todo: imprive accracy
-			ret = {result: arithTaintProp(left, right, result, rule, op)};
+			ret = {result: andTaintProp(left, right, result, rule, op)};
 			break;
 		case "|":
 			result = aleft | aright;
@@ -395,20 +432,25 @@ function TaintAnalysis(rule)
 			//process.stdout.write(''+val)
 		}
 		//functinon for testing
-		if (val.substr(0, 11) === "ta1nt3d_int")
+		if (typeof val === 'string')
 		{
-			return {result: new AnnotatedValue(
-				Number(val.substr(11)), rule.fullTaint)};
-		}
-		else if (val.substr(0, 14) === "ta1nt3d_string")
-		{
-			var ret = val.substr(14);
-			var taint = Utils.fillArray(rule.fullTaint, ret.length);
-			return {result: new AnnotatedValue(ret, taint)};
-		}
-		else if (val === "ta1nt3d_bool")
-		{
-			return {result: new AnnotatedValue(true, rule.fullTaint)};
+			if (val.substr(0, 11) === "ta1nt3d_int")
+			{
+				return {
+					result: new AnnotatedValue(
+						Number(val.substr(11)), rule.fullTaint)
+				};
+			}
+			else if (val.substr(0, 14) === "ta1nt3d_string")
+			{
+				var ret = val.substr(14);
+				var taint = Utils.fillArray(rule.fullTaint, ret.length);
+				return {result: new AnnotatedValue(ret, taint)};
+			}
+			else if (val === "ta1nt3d_bool")
+			{
+				return {result: new AnnotatedValue(true, rule.fullTaint)};
+			}
 		}
 	};
 	this.endExecution = function()
@@ -422,7 +464,11 @@ function TaintAnalysis(rule)
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
 		//todo: to remove, for test only
-		if (f.name === 'assertTaint') assertTaint(args[0], args[1], rule);
+		if (f.name === 'assertTaint')
+		{
+			assertTaint(args[0], args[1], rule,
+				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
+		}
 		if (Utils.isNative(f))
 		{
 			//convert arguments to actual value

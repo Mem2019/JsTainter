@@ -159,12 +159,12 @@ assertTaint(taintedStr | "asd", true);
 assertTaint(taintedStr | undefined, true);
 assertTaint(taintedStr | (taintedStr+'0x'+taintedStr), true);
 assertTaint(taintedStr | 0, true);
-assertTaint(taintedInt | NaN, false);
-assertTaint(taintedInt | null, false);
-assertTaint(taintedInt | "asd", false);
-assertTaint(taintedInt | undefined, false);
-assertTaint(taintedInt | (taintedInt+'0x'+taintedInt), false);
-assertTaint(taintedInt | 0, false);
+assertTaint(taintedInt | NaN, true);
+assertTaint(taintedInt | null, true);
+assertTaint(taintedInt | "asd", true);
+assertTaint(taintedInt | undefined, true);
+assertTaint(taintedInt | (taintedInt+'0x'+taintedInt), true);
+assertTaint(taintedInt | 0, true);
 
 
 //test |
@@ -174,17 +174,23 @@ assertTaint(taintedStr ^ "asd", true);
 assertTaint(taintedStr ^ undefined, true);
 assertTaint(taintedStr ^ (taintedStr+'0x'+taintedStr), true);
 assertTaint(taintedStr ^ 0, true);
-assertTaint(taintedInt ^ NaN, false);
-assertTaint(taintedInt ^ null, false);
-assertTaint(taintedInt ^ "asd", false);
-assertTaint(taintedInt ^ undefined, false);
-assertTaint(taintedInt ^ (taintedInt+'0x'+taintedInt), false);
-assertTaint(taintedInt ^ 0, false);
+assertTaint(taintedInt ^ NaN, true);
+assertTaint(taintedInt ^ null, true);
+assertTaint(taintedInt ^ "asd", true);
+assertTaint(taintedInt ^ undefined, true);
+assertTaint(taintedInt ^ (taintedInt+'0x'+taintedInt), true);
+assertTaint(taintedInt ^ 0, true);
 
 assertTaint(Number(taintedStr), true);
 assertTaint(Number(taintedStr + '123' + taintedStr), true);
 assertTaint(Number(taintedStr + '0x' + taintedStr), false);
 assertTaint(Number(taintedStr + 'e' + taintedStr), true);
+
+assertTaint(taintedInt - [], true);
+assertTaint(taintedInt - ({}), false);
+assertTaint(taintedInt - ({a : 1}), false);
+assertTaint(taintedInt - [1], true);
+assertTaint(taintedInt - [1,2], false);
 
 //var o = {a:1};
 /*
