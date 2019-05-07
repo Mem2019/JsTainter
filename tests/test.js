@@ -193,14 +193,17 @@ assertTaint(taintedInt - [1], true);
 assertTaint(taintedInt - [1,2], false);
 
 //test Number
-assertTaint(taintedInt - new Number(0), true)
-assertTaint(taintedStr - new Number(0), true)
+assertTaint(taintedInt - new Number(0), true);
+assertTaint(taintedStr - new Number(0), true);
 
-
-//test more substr
-taintedStr = "ta1nt3d_stringAAAAAAAA";
-tai
-//var o = {a:1};
+//test substr
+var taintedBool = "ta1nt3d_bool";
+var taintedIdx = "ta1nt3d_int2";
+taintedStr = taintedBool + "BBBB";
+assertTaint(taintedStr, [true,true,true,true,false,false,false,false]);
+a = taintedStr.substr(taintedIdx, taintedIdx + 1);
+assertTaint(a, [true, true, false]);
+var o = {a:1};
 /*
 todo:
 decide if bit-wise taint, or number-wise

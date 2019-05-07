@@ -26,7 +26,7 @@ function TaintAnalysis(rule)
 	{
 		return val instanceof AnnotatedValue ? val.val : val;
 	}
-	function shadow(val, noTaint)
+	function shadow(val)
 	{
 		if (val instanceof AnnotatedValue)
 		{
@@ -37,15 +37,15 @@ function TaintAnalysis(rule)
 			var ret = [];//todo, optimize to logn
 			for (var i = 0; i < val.length; i++)
 			{
-				ret[i] = noTaint;
+				ret[i] = rule.noTaint;
 			}
 			return ret;
 		}
 		else if (typeof val === 'number')
 		{
-			return noTaint;
+			return rule.noTaint;
 		}
-		return noTaint;//todo???
+		return rule.noTaint;//todo???
 	}
 
 	function assertTaint(val, taint, position)
@@ -303,8 +303,9 @@ function TaintAnalysis(rule)
 			{
 				if (outArrs.indexOf(val[k]) === -1)
 				{
-					taints[k] = shadow(val[k]);
-					val[k] = stripTaintsH(val[k], outArrs);
+					var stripped = stripTaintsH(val[k], outArrs)
+					taints[k] = stripped.taints;
+					val[k] = stripped.values;
 				}
 			}
 			outArrs.pop();
@@ -321,18 +322,52 @@ function TaintAnalysis(rule)
 		return stripTaintsH(val, []);
 	}
 
-	function mergeTaints(val, taints)
-	{//pre: val and taints come from stripTaints function
-		if (typeof taints == 'object' && !Array.isArray(taints))
+	function isTainted(taint)
+	{
+		if (Array.isArray(taint))
 		{
-			for (var k in taints)
+			for (var i = 0; i < taint.length; i++)
 			{
-				val[k] = mergeTaints(val[k], taints[k])
+				if (taint[i] !== rule.noTaint)
+					return true;
 			}
+			return false;
 		}
 		else
 		{
+			return taint !== rule.noTaint;
+		}
+	}
+
+	function mergeTaintsH(val, taints)
+	{//pre: val and taints come from stripTaints function
+		for (var k in taints)
+		{
+			if (typeof taints[k] == 'object' && !Array.isArray(taints[k]))
+			{
+				val[k] = mergeTaintsH(val[k], taints[k]);
+			}
+			else if (isTainted(taints[k]))
+			{
+				val[k] = new AnnotatedValue(val[k], taints[k]);
+			}
+		}
+		return val;
+	}
+
+	function mergeTaints(val, taints)
+	{
+		if (typeof taints == 'object' && !Array.isArray(taints))
+		{
+			return mergeTaintsH(val, taints)
+		}
+		else if (isTainted(taints))
+		{
 			return new AnnotatedValue(val, taints);
+		}
+		else
+		{
+			return val;
 		}
 	}
 
@@ -505,26 +540,29 @@ function TaintAnalysis(rule)
 		//todo: to remove, for test only
 		if (f === 'assertTaint')
 		{
-			assertTaint(args[0], args[1], rule,
+			assertTaint(args[0], args[1],
 				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
 			return {result : undefined};
 		}
 		if (Utils.isNative(f))
 		{
 			//convert arguments to actual value
-			var abase = actual(base);
-			var aargs = [];
-			for (var i = 0; i < args.length; i++)
-			{
-				aargs[i] = actual(args[i]);
-			}
+			var strippedBase = base === global ? base : stripTaints(base);
+			var strippedArgs = stripTaints(args);
+			var aargs = strippedArgs.values;
+			var abase = strippedBase.values;
+			var ret = f.apply(abase, aargs);
+
+			base = base === global ? base : mergeTaints(abase, strippedBase.taints);
 			var sv;
 			if (f === String.prototype.substr && typeof abase == 'string')
 			{//todo: what if index and size are tainted?
 				sv = getTaintArray(base).slice(aargs[0], aargs[0] + aargs[1]);
+				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			if (f === Number)
 			{
+				args = mergeTaints(aargs, strippedArgs.taints);
 				if (!alwaysGiveNaN(args[0], rule))
 				{
 					sv = rule.compressTaint(shadow(args[0], rule.noTaint));
@@ -533,10 +571,9 @@ function TaintAnalysis(rule)
 			//todo: process other type of native function
 			process.stdout.write("sv " + JSON.stringify(sv));
 			if (sv)
-				return {result:new AnnotatedValue(
-					f.apply(abase, aargs), sv)};
+				return {result:new AnnotatedValue(ret, sv)};
 			else
-				return {result:f.apply(abase, aargs)};
+				return {result:ret};
 		}
 		else
 		{
