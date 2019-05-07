@@ -546,22 +546,24 @@ function TaintAnalysis(rule)
 		}
 		if (Utils.isNative(f))
 		{
-			if (f === Function.prototype.apply)
+			var strippedArgs, strippedBase, aargs, abase, sv, ret;
+			switch (f)
+			{
+			case Function.prototype.apply:
 			{
 				return this.invokeFun(iid, base, args[0], args[1],
 					result, isConstructor, isMethod);
 			}
-			//convert arguments to actual value
-			var strippedBase = base === global ? base : stripTaints(base);
-			var strippedArgs = stripTaints(args);
-			var aargs = strippedArgs.values;
-			var abase = strippedBase.values;
-			var ret = f.apply(abase, aargs);
-
-			base = base === global ? base : mergeTaints(abase, strippedBase.taints);
-			var sv;
-			if (f === String.prototype.substr)
+			break;
+			case String.prototype.substr:
 			{//todo: what if index and size are tainted?
+				//todo: maybe there is better way
+				strippedBase = base === global ? base : stripTaints(base);
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				abase = strippedBase.values;
+				ret = f.apply(abase, aargs);
+				base = base === global ? base : mergeTaints(abase, strippedBase.taints);
 				function sliceTaint(taints, idx, len)
 				{//quick and dirty way
 					var ret = [];
@@ -580,14 +582,23 @@ function TaintAnalysis(rule)
 				sv = sliceTaint(getTaintArray(base), aargs[0], aargs[1]);
 				args = mergeTaints(aargs, strippedArgs.taints);
 			}
-			if (f === Number)
+			break;
+			case global.Number:
 			{
-				args = mergeTaints(aargs, strippedArgs.taints);
 				if (!alwaysGiveNaN(args[0], rule))
 				{
 					sv = rule.compressTaint(shadow(args[0], rule.noTaint));
 				}
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				ret = f.apply(base, aargs);
+				args = mergeTaints(aargs, strippedArgs.taints);
 			}
+			break;
+
+			}
+			//convert arguments to actual value
+
 			//todo: process other type of native function
 			process.stdout.write("sv " + JSON.stringify(sv));
 			if (sv)

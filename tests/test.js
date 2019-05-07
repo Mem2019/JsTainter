@@ -13,7 +13,7 @@ assertTaint(taintedStr, [true,true,true,true,false,false,false,false]);
 a = taintedStr.substr(taintedIdx, taintedIdx + 1);
 assertTaint(a, [true, true, false]);
 taintedArr = [a, taintedInt, [a]];
-taintedArr.push(taintedArr);
+taintedArr[3]=taintedArr;
 s = String.prototype.substr.apply(taintedArr, [0]);
 assertTaint(s, [true, true, false, false, true, false, true, true, false, false]);
 //s === "AAB,2,AAB,"
