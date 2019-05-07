@@ -1,8 +1,29 @@
 const assertTaint = "assertTaint";
-var taintedInt = "ta1nt3d_int31337";
-var taintedStr = "ta1nt3d_stringAAAA";
+var taintedInt;
+var taintedStr;
+var taintedBool;
+var taintedIdx;
+var taintedArr;
+var s,a;
+//test substr
+taintedBool = "ta1nt3d_bool";
+taintedIdx = taintedInt = "ta1nt3d_int2";
+taintedStr = taintedBool + "BBBB";
+assertTaint(taintedStr, [true,true,true,true,false,false,false,false]);
+a = taintedStr.substr(taintedIdx, taintedIdx + 1);
+assertTaint(a, [true, true, false]);
+taintedArr = [a, taintedInt, [a]];
+taintedArr.push(taintedArr);
+s = String.prototype.substr.apply(taintedArr, [0]);
+assertTaint(s, [true, true, false, false, true, false, true, true, false, false]);
+//s === "AAB,2,AAB,"
+assertTaint(s.substr(-4, 3), [true,true,false]);
+assertTaint(s.substr(-4, NaN), []);
+
+taintedInt = "ta1nt3d_int31337";
+taintedStr = "ta1nt3d_stringAAAA";
 //test arithmetic add
-var a = taintedInt + 0;
+a = taintedInt + 0;
 assertTaint(a, true);
 var b = a + 0;
 assertTaint(b, true);
@@ -196,14 +217,8 @@ assertTaint(taintedInt - [1,2], false);
 assertTaint(taintedInt - new Number(0), true);
 assertTaint(taintedStr - new Number(0), true);
 
-//test substr
-var taintedBool = "ta1nt3d_bool";
-var taintedIdx = "ta1nt3d_int2";
-taintedStr = taintedBool + "BBBB";
-assertTaint(taintedStr, [true,true,true,true,false,false,false,false]);
-a = taintedStr.substr(taintedIdx, taintedIdx + 1);
-assertTaint(a, [true, true, false]);
-var o = {a:1};
+
+
 /*
 todo:
 decide if bit-wise taint, or number-wise

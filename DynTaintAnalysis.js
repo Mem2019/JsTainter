@@ -546,6 +546,11 @@ function TaintAnalysis(rule)
 		}
 		if (Utils.isNative(f))
 		{
+			if (f === Function.prototype.apply)
+			{
+				return this.invokeFun(iid, base, args[0], args[1],
+					result, isConstructor, isMethod);
+			}
 			//convert arguments to actual value
 			var strippedBase = base === global ? base : stripTaints(base);
 			var strippedArgs = stripTaints(args);
@@ -555,9 +560,24 @@ function TaintAnalysis(rule)
 
 			base = base === global ? base : mergeTaints(abase, strippedBase.taints);
 			var sv;
-			if (f === String.prototype.substr && typeof abase == 'string')
+			if (f === String.prototype.substr)
 			{//todo: what if index and size are tainted?
-				sv = getTaintArray(base).slice(aargs[0], aargs[0] + aargs[1]);
+				function sliceTaint(taints, idx, len)
+				{//quick and dirty way
+					var ret = [];
+					var s = "";
+					for (var i = 0; i < taints.length; i++)
+					{
+						s += taints[i] ? '1' : '0';
+					}
+					s = s.substr(idx, len);
+					for (i = 0; i < s.length; i++)
+					{
+						ret = ret.concat(s[i] === '1');
+					}
+					return ret;
+				}
+				sv = sliceTaint(getTaintArray(base), aargs[0], aargs[1]);
 				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			if (f === Number)
