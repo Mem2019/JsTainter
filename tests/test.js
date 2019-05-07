@@ -5,6 +5,28 @@ var taintedBool;
 var taintedIdx;
 var taintedArr;
 var s,a;
+
+//test charAt and charCodeAt
+s = "ta1nt3d_stringAA" + "BB";
+assertTaint(s.charAt(1), [true]);
+assertTaint(s.charAt(2), [false]);
+assertTaint(s.charAt(4), []);
+assertTaint(s.charAt(0x10000000), []);
+assertTaint(s.charAt(-1), []);
+assertTaint(s.charAt("asd"), [true]);
+assertTaint(s.charAt(NaN), [true]);
+assertTaint(s.charAt(null), [true]);
+assertTaint(s.charCodeAt(1), true);
+assertTaint(s.charCodeAt(2), false);
+assertTaint(s.charCodeAt(4), false);
+assertTaint(s.charCodeAt(0x10000000), false);
+assertTaint(s.charCodeAt(-1), false);
+assertTaint(s.charCodeAt("asd"), true);
+assertTaint(s.charCodeAt(NaN), true);
+assertTaint(s.charCodeAt(null), true);
+
+
+
 //test substr
 taintedBool = "ta1nt3d_bool";
 taintedIdx = taintedInt = "ta1nt3d_int2";
@@ -19,6 +41,16 @@ assertTaint(s, [true, true, false, false, true, false, true, true, false, false]
 //s === "AAB,2,AAB,"
 assertTaint(s.substr(-4, 3), [true,true,false]);
 assertTaint(s.substr(-4, NaN), []);
+assertTaint(String.prototype.substr.apply(taintedArr, [-4, 3]), [true,true,false]);
+assertTaint(String.prototype.substr.apply(taintedArr, [-4, NaN]), []);
+var taintedObj = {a:taintedInt, b:taintedArr, c:taintedBool};
+taintedObj["obj"] = taintedObj;
+assertTaint(String.prototype.substr.apply(taintedObj, [0]),
+	[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]);
+//"[object Object]"
+assertTaint(String.prototype.substr.apply(global, [0]),
+	[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]);
+//"[object global]"
 
 taintedInt = "ta1nt3d_int31337";
 taintedStr = "ta1nt3d_stringAAAA";

@@ -301,6 +301,8 @@ This is even complicated, and could easily produce false negatives/positives; al
 
 The problem is not only false positives that will be produced if bit-wise taint information is not used, we may also need to consider cases like `"a" | "b"`
 
+
+
 ## Get Field
 
 Array case, Object case, key is tainted...
@@ -311,7 +313,7 @@ Array case, Object case, key is tainted...
 
 ### Native Function Call
 
-This should be regarded like operators instead of functions, which will be implemented further. However, the edge case is also hard to consider. For example, what if arguments passed into `substr` function is not `string` type?
+
 
 ### User Defined Function Call
 

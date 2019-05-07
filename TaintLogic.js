@@ -21,6 +21,14 @@ TaintUnit.prototype.compressTaint = function (shadow)
 		return shadow.reduce((a, b) => a || b);
 	}
 };
+TaintUnit.prototype.ordTaint = function (t)
+{
+	return t[0];
+};
+TaintUnit.prototype.chrTaint = function (t)
+{
+	return [t]
+};
 // TaintUnit.prototype.compressTaint = function(s)
 // {
 // 	if (Array.isArray(s))

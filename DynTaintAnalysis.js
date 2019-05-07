@@ -135,6 +135,11 @@ function TaintAnalysis(rule)
 		return getTaintArrayH(val, []);
 	}
 
+	function isUntainted(taint)
+	{
+		return !isTainted(taint);
+	}
+
 	function addTaintProp(left, right, result, op)
 	{
 		if (isNumAddOperands(actual(left)) &&
@@ -153,8 +158,13 @@ function TaintAnalysis(rule)
 		else //if (typeof actual(left) === "string" &&
 		//typeof actual(right) === "string")
 		{//string concatenation
-			return new AnnotatedValue(actual(left) + actual(right),
-				getTaintArray(left, rule).concat(getTaintArray(right, rule)));
+			var newTaint = getTaintArray(left, rule).
+							concat(getTaintArray(right, rule));
+			if (isUntainted(newTaint))
+				return actual(left) + actual(right);
+			else
+				return new AnnotatedValue(
+					actual(left) + actual(right), newTaint);
 		}
 	}
 
@@ -226,13 +236,13 @@ function TaintAnalysis(rule)
 		return rule.isTainted(shadow(val));
 	}
 
-	const isZeroInBitOper = (v) =>
+	const isZeroInOper = (v) =>
 		v === null || alwaysGiveNaN(v) ||
 		(typeof v == "number" && (isNaN(v) || v === 0));
 
 	function shiftTaintProp(left, right, result, op)
 	{
-		if (isZeroInBitOper(left))
+		if (isZeroInOper(left))
 		{//if LHS is always NaN, result is always 0
 			return result;
 		}
@@ -304,7 +314,8 @@ function TaintAnalysis(rule)
 				if (outArrs.indexOf(val[k]) === -1)
 				{
 					var stripped = stripTaintsH(val[k], outArrs)
-					taints[k] = stripped.taints;
+					if (stripped.taints !== rule.noTaint)
+						taints[k] = stripped.taints;
 					val[k] = stripped.values;
 				}
 			}
@@ -371,10 +382,30 @@ function TaintAnalysis(rule)
 		}
 	}
 
+	function taintArrToStr(taints)
+	{//todo: max string len supported is 65535
+		var s = "";
+		assert(taints.length <= 0x10000);
+		for (var i = 0; i < taints.length; i++)
+		{
+			s += String.fromCharCode(i);
+		}
+		return s;
+	}
+	function strToTaintArr(s, taints)
+	{
+		var retSlice = [];
+		for (var i = 0; i < s.length; i++)
+		{
+			retSlice = retSlice.concat(taints[s.charCodeAt(i)]);
+		}
+		return retSlice;
+	}
+
 	function andTaintProp(left, right, result, op)
 	{
-		if (isZeroInBitOper(left) ||
-			isZeroInBitOper(right))
+		if (isZeroInOper(left) ||
+			isZeroInOper(right))
 		{
 			return result;
 		}
@@ -537,6 +568,9 @@ function TaintAnalysis(rule)
 	};
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
+		const charAtTaint = (taints, idx) =>
+			strToTaintArr(taintArrToStr(taints).charAt(idx),
+				taints);
 		//todo: to remove, for test only
 		if (f === 'assertTaint')
 		{
@@ -554,31 +588,18 @@ function TaintAnalysis(rule)
 				return this.invokeFun(iid, base, args[0], args[1],
 					result, isConstructor, isMethod);
 			}
-			break;
 			case String.prototype.substr:
 			{//todo: what if index and size are tainted?
 				//todo: maybe there is better way
-				strippedBase = base === global ? base : stripTaints(base);
+				strippedBase = stripTaints(base);
 				strippedArgs = stripTaints(args);
 				aargs = strippedArgs.values;
 				abase = strippedBase.values;
 				ret = f.apply(abase, aargs);
-				base = base === global ? base : mergeTaints(abase, strippedBase.taints);
-				function sliceTaint(taints, idx, len)
-				{//quick and dirty way
-					var ret = [];
-					var s = "";
-					for (var i = 0; i < taints.length; i++)
-					{
-						s += taints[i] ? '1' : '0';
-					}
-					s = s.substr(idx, len);
-					for (i = 0; i < s.length; i++)
-					{
-						ret = ret.concat(s[i] === '1');
-					}
-					return ret;
-				}
+				base = mergeTaints(abase, strippedBase.taints);
+				const sliceTaint = (taints, idx, len) =>
+					strToTaintArr(taintArrToStr(taints).
+					substr(idx, len), taints);
 				sv = sliceTaint(getTaintArray(base), aargs[0], aargs[1]);
 				args = mergeTaints(aargs, strippedArgs.taints);
 			}
@@ -595,13 +616,61 @@ function TaintAnalysis(rule)
 				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
+			case String.prototype.charAt:
+			{
+				strippedBase = stripTaints(base);
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				abase = strippedBase.values;
+				ret = f.apply(abase, aargs);
+				base = mergeTaints(abase, strippedBase.taints);
+				sv = charAtTaint(getTaintArray(base), aargs[0]);
+				//todo: what if index is tainted
+				args = mergeTaints(aargs, strippedArgs.taints);
+			}
+			break;
+			case String.prototype.charCodeAt:
+			{
+				strippedBase = stripTaints(base);
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				abase = strippedBase.values;
+				ret = f.apply(abase, aargs);
+				base = mergeTaints(abase, strippedBase.taints);
 
+				sv = rule.ordTaint(charAtTaint(getTaintArray(base), aargs[0]));
+				//when taint array length == 0, sv == undefined, which gives no taint
+				//todo: what if index is tainted
+				args = mergeTaints(aargs, strippedArgs.taints);
+			}
+			break;
+			case String.fromCharCode:
+			{
+				if (!isZeroInOper(args[0]))
+				{
+					sv = rule.chrTaint(rule.compressTaint(
+						shadow(args[0], rule.noTaint)));
+				}
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				ret = f.apply(base, aargs);
+				args = mergeTaints(aargs, strippedArgs.taints);
+			}
+			break;
+			case String.prototype.concat:
+			{
+				ret = actual(base) + actual(args[0]);
+				sv = getTaintArray(base, rule).
+						concat(getTaintArray(args[0], rule));
+
+			}
+			break;
 			}
 			//convert arguments to actual value
 
 			//todo: process other type of native function
 			process.stdout.write("sv " + JSON.stringify(sv));
-			if (sv)
+			if (typeof sv !== 'undefined' && isTainted(sv))
 				return {result:new AnnotatedValue(ret, sv)};
 			else
 				return {result:ret};
