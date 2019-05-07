@@ -5,9 +5,10 @@ Utils.prototype.assert = require('assert');//todo: node.js
 
 function isNative(func)
 {
+	var toString = Function.prototype.toString.call
 	var expr = /function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/;
-	var res = (''+func).match(expr);
-	return (res !== null && res[0] === ''+func)
+	var res = (toString(func)).match(expr);
+	return (res !== null && res[0] === toString(func))
 }
 
 function fillArray(value, len)

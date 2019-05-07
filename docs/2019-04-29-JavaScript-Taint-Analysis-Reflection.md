@@ -313,7 +313,9 @@ Array case, Object case, key is tainted...
 
 ### Native Function Call
 
+The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, `alert` is a built-in function when JavaScript is running in the browser, and `Number` is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
 
+Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression `/function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/`. Note that the reason why I choose ``
 
 ### User Defined Function Call
 
