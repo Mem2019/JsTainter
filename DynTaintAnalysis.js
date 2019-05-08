@@ -48,29 +48,29 @@ function TaintAnalysis(rule)
 		return rule.noTaint;//todo???
 	}
 
+	function myAssert(b, position)
+	{
+		if (b !== true)
+		{
+			process.stdout.write("Assertion failure at" + position);
+			assert(false);
+		}
+	}
 	function assertTaint(val, taint, position)
 	{
-		function myAssert(b)
-		{
-			if (!b)
-			{
-				process.stdout.write("Assertion failure at" + position);
-				assert(false);
-			}
-		}
 		var s = shadow(val, rule.noTaint);
-		myAssert(typeof s === typeof taint);
+		myAssert(typeof s === typeof taint, position);
 		if (Array.isArray(s))
 		{
-			myAssert(s.length === taint.length);
+			myAssert(s.length === taint.length, position);
 			for (var i = 0; i < s.length; i++)
 			{
-				myAssert(s[i] === taint[i]);
+				myAssert(s[i] === taint[i], position);
 			}
 		}
 		else
 		{
-			myAssert(s === taint);
+			myAssert(s === taint, position);
 		}
 	}
 
@@ -140,6 +140,16 @@ function TaintAnalysis(rule)
 		return !isTainted(taint);
 	}
 
+	function stringConcatProp(left, right, result)
+	{
+		var newTaint = getTaintArray(left, rule).
+		concat(getTaintArray(right, rule));
+		if (isUntainted(newTaint))
+			return result;
+		else
+			return new AnnotatedValue(result, newTaint);
+	}
+
 	function addTaintProp(left, right, result, op)
 	{
 		if (isNumAddOperands(actual(left)) &&
@@ -158,13 +168,7 @@ function TaintAnalysis(rule)
 		else //if (typeof actual(left) === "string" &&
 		//typeof actual(right) === "string")
 		{//string concatenation
-			var newTaint = getTaintArray(left, rule).
-							concat(getTaintArray(right, rule));
-			if (isUntainted(newTaint))
-				return actual(left) + actual(right);
-			else
-				return new AnnotatedValue(
-					actual(left) + actual(right), newTaint);
+			return stringConcatProp(left, right, result);
 		}
 	}
 
@@ -430,98 +434,145 @@ function TaintAnalysis(rule)
 	};
 	this.binary = function(iid, op, left, right, result)
 	{
-		var aleft = actual(left);
-		var aright = actual(right);
 		binaryRec(left, right, this.taintProp, sandbox, iid);
 		var ret;
+		var strippedLeft = stripTaints(left);
+		var strippedRight = stripTaints(right);
+
+		var aleft = strippedLeft.values;
+		var aright = strippedRight.values;
 		switch (op)
 		{
 		case "+":
 			result = aleft + aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: addTaintProp(left, right, result, rule, op)};
 			break;
 		case "-":
 			result = aleft - aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "*":
 			result = aleft * aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "/":
 			result = aleft / aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "%":
 			result = aleft % aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "<<":
 			result = aleft << aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>":
 			result = aleft >> aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>>":
 			result = aleft >>> aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case "<":
 			result = aleft < aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">":
 			result = aleft > aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "<=":
 			result = aleft <= aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">=":
 			result = aleft >= aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "==":
 			result = aleft == aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!=":
 			result = aleft != aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "===":
 			result = aleft === aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!==":
 			result = aleft !== aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "&":
 			result = aleft & aright;//todo: imprive accracy
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: andTaintProp(left, right, result, rule, op)};
 			break;
 		case "|":
 			result = aleft | aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "^":
 			result = aleft ^ aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "delete":
 			result = delete aleft[aright];
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		case "instanceof":
 			result = aleft instanceof aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		case "in":
 			result = aleft in aright;
+			left = mergeTaints(aleft, strippedLeft.taints);
+			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		default:
@@ -575,6 +626,12 @@ function TaintAnalysis(rule)
 		if (f === 'assertTaint')
 		{
 			assertTaint(args[0], args[1],
+				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
+			return {result : undefined};
+		}
+		else if (f === "assert")
+		{
+			myAssert(actual(args[0]),
 				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
 			return {result : undefined};
 		}

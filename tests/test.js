@@ -1,4 +1,5 @@
 const assertTaint = "assertTaint";
+const assert = "assert";
 var taintedInt;
 var taintedStr;
 var taintedBool;
@@ -8,6 +9,7 @@ var s,a;
 
 //test charAt and charCodeAt
 s = "ta1nt3d_stringAA" + "BB";
+assert(s === "AABB");
 assertTaint(s.charAt(1), [true]);
 assertTaint(s.charAt(2), [false]);
 assertTaint(s.charAt(4), []);
@@ -31,14 +33,19 @@ assertTaint(s.charCodeAt(null), true);
 taintedBool = "ta1nt3d_bool";
 taintedIdx = taintedInt = "ta1nt3d_int2";
 taintedStr = taintedBool + "BBBB";
+assert(taintedStr === "trueBBBB");
 assertTaint(taintedStr, [true,true,true,true,false,false,false,false]);
 a = taintedStr.substr(taintedIdx, taintedIdx + 1);
+assert(a === "ueB");
 assertTaint(a, [true, true, false]);
 taintedArr = [a, taintedInt, [a]];
 taintedArr[3]=taintedArr;
 s = String.prototype.substr.apply(taintedArr, [0]);
 assertTaint(s, [true, true, false, false, true, false, true, true, false, false]);
-//s === "AAB,2,AAB,"
+assert(s === "ueB,2,ueB,");
+assertTaint("123" + taintedArr,
+	[false, false, false, true, true, false, false, true, false, true, true, false, false]);
+assert("123" + taintedArr === "123ueB,2,ueB,");
 assertTaint(s.substr(-4, 3), [true,true,false]);
 assertTaint(s.substr(-4, NaN), []);
 assertTaint(String.prototype.substr.apply(taintedArr, [-4, 3]), [true,true,false]);
