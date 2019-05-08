@@ -117,7 +117,7 @@ v = mergeTaints(sv.taints, sv.values)
 
 ### Implementation
 
-
+//todo, but I don't think there is any to say, "talk is cheap, show me the code"
 
  
 
@@ -375,9 +375,9 @@ Array case, Object case, key is tainted...
 
 ## Set Field
 
-## Function Call
+## Native Function Call
 
-### Native Function Call
+### Native Function Recognition
 
 The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, `alert` is a built-in function when JavaScript is running in the browser, and `Number` is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
 
@@ -389,7 +389,75 @@ f.toString = function () {return "hacked"}
 f();
 ```
 
+### Native Function Call Handler
 
+In `Jalangi2` framework, we can set `invokeFunPre` and `invokeFun` fields of analysis class as handlers, and they will be called before and after any function call is made, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are not stripped. Thus, instead, work is done in `invokeFun` handler by `JsTainter`.
+
+In `invokeFun` handler, some checks are done against `f`, the function being called in this function call operation. If it falls into the category of native function, a big `switch` statement will be used to check against the value of `f` , and jump to the corresponding case, in which the taint propagation logic and actual function call are implemented for that particular native function.
+
+### Native Function Rules
+
+In this subsubsectinon I will cover the detail of handler for different native functions.
+
+**String.prototype.substr**
+
+The `substr` function, as its name suggests, takes the sub-string of given string. The first argument is the index and the second argument is length. However, there are some special cases. 
+
+*Firstly*, the input string does not have to be string type: if a variable other than string type is passed as the `this` argument, it will be converted into string first before applying `substr` operation. We can use `getTaintArray` that we implemented before to get the taint array when the variable is converted into `String`, and this problem can be solved.
+
+```javascript
+> String.prototype.substr.apply(123456789, [2,3])
+'345'
+> String.prototype.substr.apply({}, [2,10])
+'bject Obje'
+> String.prototype.substr.apply([1,2,3,4,5,6,7,8], [2,3])
+'2,3'
+```
+
+*Secondly*, index can be negative, and when it is negative, it will start from the end. Also, index and length does not have to be `Number`; if they are not `Number`, they will be converted to `Number` first. When they are evaluated to `NaN`, it will be regarded as `0`.
+
+```javascript
+> "abcdefghij".substr(-3,2)
+'hi'
+> "abcdefghij".substr("abcdefghij".length-3,2)
+'hi'
+> "abcdefghij".substr(-100, 3)
+'abc'
+> "abcdefghij".substr(NaN, 3)
+'abc'
+> "abcdefghij".substr({}, 3)
+'abc'
+> "abcdefghij".substr([[[3]]], [3])
+'def'
+> "abcdefghij".substr('3', '3')
+'def'
+```
+
+When `substr` is handled, we must also slice the taint array in the same way as `substr`. For example, for a string `AnnotatedValue("AABB", [true,true,false,false])`, and `substr(1,1)` is applied, the result should be `AnnotatedValue("AB", [true,false])`. However, if we use `Array.prototype.slice` to slice the taint array of string in `substr` operation, we will have too many cases to consider. Thus, I came up with a quick and dirty way to implement it: the taint array can be converted to string first, then apply the `substr` with the same argument, and finally convert it back to taint array. For each character of the transformed string, its ascii value is the index to the taint array, so what `taintArrToStr` actually does is to generate a string with same length and characters with ascending values starting from `'\u0000'`. After `substr` is applied, the ascii values are used as indeces and mapped back to the taint array elements, which are joined togeter to be the result. A piece of code may illustrate my idea better.
+
+```javascript
+> var s = taintArrToStr([true, false, true, false])
+> s
+"\u0000\u0001\u0002\u0003"
+> s = s.substr(1,1)
+"\u0001\u0002"
+> strToTaintArr(s, [true, false, true, false])
+[false, true]
+```
+
+However, the disadvatange of this approach is that the maximum length of string cannot exceed 65536, the max value of numeric value of character, but fortunately string with such big size rarely occurs.
+
+**Number**
+
+This function convert variable to `Number`, we can just use `rule.compressTaint` to obtain the result taint if the variable will not always evaluated to `NaN`. Stripping and merging are also required before feeding arguments into `Number.apply`. The logic is almost same in arithmetic taint propagation handler.
+
+**String.prototype.charAt**
+
+This function 
+
+### Rules of Different Native Functions
+
+In this subsubsection I will cover the design of rules
 
 ### User Defined Function Call
 

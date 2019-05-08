@@ -619,9 +619,8 @@ function TaintAnalysis(rule)
 	};
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
-		const charAtTaint = (taints, idx) =>
-			strToTaintArr(taintArrToStr(taints).charAt(idx),
-				taints);
+		const charAtTaint = (ts, idx) =>
+			strToTaintArr(taintArrToStr(ts).charAt(idx), ts);
 		//todo: to remove, for test only
 		if (f === 'assertTaint')
 		{
@@ -656,14 +655,14 @@ function TaintAnalysis(rule)
 				abase = strippedBase.values;
 				ret = f.apply(abase, aargs);
 				base = mergeTaints(abase, strippedBase.taints);
-				const sliceTaint = (taints, idx, len) =>
-					strToTaintArr(taintArrToStr(taints).
-					substr(idx, len), taints);
+				const sliceTaint = (ts, idx, len) =>
+					strToTaintArr(taintArrToStr(ts).
+					substr(idx, len), ts);
 				sv = sliceTaint(getTaintArray(base), aargs[0], aargs[1]);
 				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
-			case global.Number:
+			case Number:
 			{
 				if (!alwaysGiveNaN(args[0], rule))
 				{
