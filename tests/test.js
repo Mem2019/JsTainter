@@ -7,6 +7,17 @@ var taintedIdx;
 var taintedArr;
 var s,a;
 
+//test String.prototype.concat
+taintedStr = "ta1nt3d_stringAAA";
+taintedInt = "ta1nt3d_int0";
+a = taintedInt + 3;
+taintedArr = [taintedStr, a, undefined,[a]];
+taintedArr[2] = taintedArr;
+s = taintedStr.concat("BB", taintedInt, a, taintedArr);
+assert(s === "AAABB03AAA,3,,3");
+assertTaint(s, [true, true, true, false, false, true, true, true, true, true,
+				false, true, false, false, true]);
+
 //test charAt and charCodeAt
 s = "ta1nt3d_stringAA" + "BB";
 assert(s === "AABB");

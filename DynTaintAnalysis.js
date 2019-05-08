@@ -716,10 +716,16 @@ function TaintAnalysis(rule)
 			break;
 			case String.prototype.concat:
 			{
-				ret = actual(base) + actual(args[0]);
-				sv = getTaintArray(base, rule).
-						concat(getTaintArray(args[0], rule));
-
+				strippedBase = stripTaints(base);
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				abase = strippedBase.values;
+				ret = f.apply(abase, aargs);
+				args = mergeTaints(aargs, strippedArgs.taints);
+				base = mergeTaints(abase, strippedBase.taints);
+				sv = Array.prototype.concat.apply(
+					getTaintArray(base, rule),
+					Array.prototype.map.call(args,(a) => getTaintArray(a, rule)));
 			}
 			break;
 			}
