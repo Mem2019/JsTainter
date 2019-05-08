@@ -317,7 +317,7 @@ function TaintAnalysis(rule)
 			{
 				if (outArrs.indexOf(val[k]) === -1)
 				{
-					var stripped = stripTaintsH(val[k], outArrs)
+					var stripped = stripTaintsH(val[k], outArrs);
 					if (stripped.taints !== rule.noTaint)
 						taints[k] = stripped.taints;
 					val[k] = stripped.values;

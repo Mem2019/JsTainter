@@ -55,6 +55,72 @@ Taint degree?
 
 Due to the dynamic and weakly-typed feature of JavaScript, the taint propagation rule is much more complicated than dynamic taint analysis over binary executables.
 
+## Taint Stripping and Merging
+
+When variable is used in JavaScript operations, the taint information must be stripped first to ensure the correctness of the result of JavaScript operations. These operations include JavaScript native function call and basic operator operation. The correctness of the operation can be affected as shown below.
+
+```javascript
+var arr;
+//arr is [new AnnotatedValue("AB", [true,false])]
+arr += "C";
+```
+
+If the tainted information is not tripped from the `arr` variable, `"[object Object]C"` will be the final result of `arr`, which is not correct, because dynamic taint analysis should not change the behavior of the program being analyzed, and the final result of `arr` should be `"ABC"` instead, as shown below.
+
+```javascript
+// new AnnotatedValue("AB", [true,false]) is essentially ["AB"]
+> var arr = ["AB"] 
+undefined
+> arr += "C"
+'ABC'
+> arr
+'ABC'
+```
+
+Therefore, to prevent such case from occuring, we need to strip the taint information to recover the original variable before putting them into JavaScript built-in operation. For example, 
+
+```javascript
+//The way `stripTaints` function should be used
+var v;
+var sv = stripTaints(v);
+sv.taints; //access taint part
+sv.values; //access value part
+
+//Some examples
+//before stripping
+[new AnnotatedValue("AB", [true, false])]
+//after stripping
+["AB"] // values
+{'0':[true,false]} // taints
+//before stripping
+{i:new AnnotatedValue(1, true), 
+    o:{x:new AnnotatedValue(2, true), 
+        a:[new AnnotatedValue("A", [true])]}}
+//after stripping
+{i:1, o:{x:2,a:["A"]}} // values
+{i:true, o:{x:true, a:{'0':[true]}}} // taints
+```
+
+The example above is clear. When we strip the taint from a variable, it separates the value part and taint part into 2 different objects, while the keys are the same but the values are different, and this is done recursively: any object inside the object is also stripped. Here is a few points to note: 1. The original object is not cloned, and it will share the same reference as the `values` part. So, if the developper use the original object after `stripTaints` is called to it, he will get the stripped object instead of the unstripped object. The example is shown in //todo. 2. Even if original structure is an `Array`, when it is separated into the taint part, it becomes a `Map` with number string as the key. The reason of this design is that if we keep it as `Array`, it will be confused with taint information of `String`, which is also an `Array`. Also, `a[123]` and `a["123"]` will always be mapped to the same value, no matter `a` is a `Map` or an `Array`, so a number string as key will not cause any problem when we use key of different type to access the object. 3. Recursion should not be applied to circular references, since that will cause infinite recursion. Instead, a stack that stores all current outter object references should be used to check the existence of circular reference, and if any, skip that variable without applying any recursion call to it.
+
+```javascript
+var obj; //some object that is tainted
+var sobj = stripTaints(obj);
+//using obj will get the stripped version
+```
+
+Paired with `stripTaints` function, we also need to implement a `mergeTaints` that recovers the taint information separated by `stripTaints`. The way to use it is shown below.
+
+```javascript
+v = mergeTaints(sv.taints, sv.values)
+```
+
+### Implementation
+
+
+
+ 
+
 ## Binary Operators
 
 ### Add
@@ -315,7 +381,15 @@ Array case, Object case, key is tainted...
 
 The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, `alert` is a built-in function when JavaScript is running in the browser, and `Number` is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
 
-Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression `/function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/`. Note that the reason why I choose ``
+Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression `/function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/`. Note that the reason why I choose `Function.prototype.toString` is to prevent the case of code injection. The reason is that the code that `JsTainter` is analyzing might be malicious. It can rewrite the `toString` method of the variable being called as function, so that the identification of native function might not work as expected, and this might also cause security issue. The example of this kind of attack is shown below.
+
+```javascript
+var f = {};
+f.toString = function () {return "hacked"}
+f();
+```
+
+
 
 ### User Defined Function Call
 
@@ -326,6 +400,8 @@ todo, there are some wired behavior
 ### SandBox
 
 What if the codes being analyzed is malicious and want to gain previlidge? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
+
+
 
 # Test
 
