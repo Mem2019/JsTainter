@@ -637,7 +637,9 @@ function TaintAnalysis(rule)
 		}
 		if (Utils.isNative(f))
 		{
-			var strippedArgs, strippedBase, aargs, abase, sv, ret;
+			var strippedArgs, strippedBase;
+			var aargs, abase;
+			var sv, ret, taints;
 			switch (f)
 			{
 			case Function.prototype.apply:
@@ -728,6 +730,56 @@ function TaintAnalysis(rule)
 					Array.prototype.map.call(args,(a) => getTaintArray(a, rule)));
 			}
 			break;
+			case String.prototype.endsWith:
+			{
+				taints = getTaintArray(base);
+				t = taints[taints.length - 1];
+
+			}
+			break;
+			case escape:
+			{
+				taints = getTaintArray(args[0]);
+				strippedBase = stripTaints(args[0]);
+				abase = strippedBase.values;
+				ret = f.apply(base, [abase]);
+				sv = [];
+				var j = 0;
+				for (var i = 0; i < taints.length; i++)
+				{
+					if (ret[j] === '%')
+					{
+						var k;
+						if (ret[j + 1] === 'u')
+						{
+							for (k = 0; k < 6; k++)
+							{
+								sv = sv.concat(rule.escapeTaint(taints[i]));
+							}
+							j += 6;
+						}
+						else
+						{//hex
+							for (k = 0; k < 3; k++)
+							{
+								sv.concat(rule.escapeTaint(taints[i]));
+							}
+							j += 3;
+						}
+					}
+					else
+					{
+						sv.concat(rule.escapeTaint(taints[i]));
+						++j;
+					}
+				}
+			}
+			break;
+			// 	case
+			// {
+			//
+			// }
+			// break;
 			}
 			//convert arguments to actual value
 

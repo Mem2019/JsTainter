@@ -29,6 +29,10 @@ TaintUnit.prototype.chrTaint = function (t)
 {
 	return [t]
 };
+TaintUnit.prototype.escapeTaint = function (t ,type)
+{
+	return t;
+};
 // TaintUnit.prototype.compressTaint = function(s)
 // {
 // 	if (Array.isArray(s))
