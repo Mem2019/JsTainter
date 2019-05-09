@@ -453,7 +453,58 @@ This function convert variable to `Number`, we can just use `rule.compressTaint`
 
 **String.prototype.charAt**
 
-This function 
+This function obtains the character at given index, which should return the same taint information as that of charcter at that index. For example, `charAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue("B", [false])`.
+
+However, there are some special cases. The `this` argument does not have to be string type, so `getTaintArray` need to be used to get the taint array if the value is cast to string. Also, as always, the variables are stripped first before being putting into the native function.
+
+There are also cases where the index is tainted, but the characters in string are not tainted. In this case we need to give user option to choose if the result should be tainted. //todo
+
+**String.prototype.charCodeAt**
+
+This is similar to `chatAt`, except that the ascii value will be returned, so the taint information at that index will also be returned as shadow value. For the same example, `charCodeAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue(0x42, false)`.
+
+**String.fromCharCode**
+
+This function convert the integer to string of length 1 whose unicode value is same as the given index. For example, `String.fromCharCode(0x41)` will give `"A"`. The result taint information is same as the taint value of given argument. However, the given argument does not have to be `Number`. They can be some other types.
+
+```javascript
+> String.fromCharCode([[0x41]])
+'A'
+> String.fromCharCode({a:0x41})
+'\u0000'
+> String.fromCharCode('0x41')
+'A'
+> String.fromCharCode(null)
+'\u0000'
+> String.fromCharCode('0x41\u0000')
+'\u0000'
+```
+
+Therefore, we need to call `compressTaint` to the shadow value of given input. Also, if the argument always evaluates to `NaN` no matter what tainted parts are, the return value, which is `'\u0000'`, should not be tainted. For example `String.fromCharCode(AnnotatedValue('0x41\u0000', [true,true,true,true,false]))` will stil return `AnnotatedValue('\u0000', [false])`.
+
+**String.prototype.concat**
+
+This is almost same as the `+` operation as string concatention. However, the difference is that this function can concat serveral strings together.
+
+```javascript
+> "abc".concat("def", "ghi", "jk")
+'abcdefghijk'
+> "abc".concat({}, 123, [2,3])
+'abc[object Object]1232,3'
+```
+
+Thus, we need to concat all taint array together, using `Array.prototype.concat`.
+
+**escape**
+
+This is the function that converts the string into URL encoding if necessary.
+
+```javascript
+> escape("abc\"\'<>\ucccc")
+'abc%22%27%3C%3E%uCCCC'
+```
+
+There are 3 cases: if the character does not have to be converted into URL encoding, it will be left unchanged; if the character need to be encoded but is smaller than `0x100`, it will be converted to `%XX`; if the character need to be encoded but is larger than `0x100`, it will be converted to `%uXXXX`. For the first case, the taint information is left unchanged; for the second case, the taint information is copied 3 times; and for the third case, the taint information is copied 6 times.
 
 ### Rules of Different Native Functions
 
