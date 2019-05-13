@@ -105,11 +105,15 @@ function TaintAnalysis(rule)
 		outArrs.pop();
 		return ret;
 	}
-	function getTaintArrayH(val, outArrs)
-	{//get the taint array when `val` is converted to string
-		var aval = actual(val);
-		switch(typeof aval)
-		{
+
+
+	function getTaintArray(val)
+	{
+		function getTaintArrayH(val, outArrs)
+		{//get the taint array when `val` is converted to string
+			var aval = actual(val);
+			switch (typeof aval)
+			{
 			case 'string':
 				return shadow(val, rule.noTaint);
 			case 'object':
@@ -127,11 +131,8 @@ function TaintAnalysis(rule)
 			}
 			default:
 				throw Error("Currently does not support type \'" + typeof val + "\' for add");
+			}
 		}
-	}
-
-	function getTaintArray(val)
-	{
 		return getTaintArrayH(val, []);
 	}
 
@@ -731,6 +732,7 @@ function TaintAnalysis(rule)
 			break;
 			case String.prototype.endsWith:
 			{
+				//todo
 				taints = getTaintArray(base);
 				t = taints[taints.length - 1];
 
@@ -774,11 +776,34 @@ function TaintAnalysis(rule)
 				}
 			}
 			break;
-			// 	case
-			// {
-			//
-			// }
-			// break;
+			case Number.prototype.toString:
+			{//base must be number, otherwise exception will be thrown
+				abase = actual(base);
+				if (!(abase instanceof Number) && typeof abase !== 'number')
+					throw throw TypeError("Number.prototype.toString is not generic");
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+
+				rule.toStringTaint(base, shadow(base), (a) => f.apply(a, aargs));
+				args = mergeTaints(aargs, strippedArgs.taints);
+			}
+			break;
+			case Array.prototype.push:
+			{
+				ret = f.apply(base, args);
+			}
+			break;
+			default:
+			{
+				strippedBase = stripTaints(base);
+				strippedArgs = stripTaints(args);
+				aargs = strippedArgs.values;
+				abase = strippedBase.values;
+				ret = f.apply(abase, aargs);
+				args = mergeTaints(aargs, strippedArgs.taints);
+				base = mergeTaints(abase, strippedBase.taints);
+			}
+			break;
 			}
 			//convert arguments to actual value
 

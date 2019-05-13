@@ -9,7 +9,13 @@ TaintUnit.prototype.arithmetic = function(left, right)
 {
 	return left || right;
 };
-TaintUnit.prototype.toStringTaint = (a,t)=>Utils.fillArray(t, (''+a).length);
+TaintUnit.prototype.toStringTaint = function(a,t,f)
+{
+	if (f !== 'undefined')
+		return Utils.fillArray(t, (String(a)).length);
+	else
+		return Utils.fillArray(t, f(a).length);
+};
 TaintUnit.prototype.compressTaint = function (shadow)
 {//todo, make it more generic
 	if (typeof shadow == 'boolean')

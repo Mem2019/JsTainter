@@ -553,3 +553,10 @@ Note that these 2 pieces of codes are in different files. The first code piece i
 //todo: taint analysis for other operations, e.g. getfield, other native functions, e.g. String/Numer methods
 
 //todo: logs, behavior according to configs, records
+
+
+
+1. static analysis?
+2. sandbox, security?
+3. too many native functions, can't do all of them...
+
