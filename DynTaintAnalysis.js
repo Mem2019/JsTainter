@@ -1,12 +1,13 @@
 //todo: --------------nodejs
 const Utils = new (require("./Utils").Utils)();
-const Log = new (require("./Log").Log)();
 const assert = require("assert");
 //----------nodejs
 
 var config = new (function ()
 {
 	this.ifTaintNaN = true;
+	this.ifTaintResWhenKeyTaint = false;
+	this.ifTaintElemWhenKeyTaint = false;
 })();
 
 
@@ -823,10 +824,32 @@ function TaintAnalysis(rule)
 	};
 	this.getFieldPre = function(iid, base, offset)
 	{
-		//todo, when offset is tainted
-		process.stdout.write((base) + ' ' + offset + '\n');
-		return {base:actual(base), offset:actual(offset)};
+		return {base:base, offset:offset, skip:true};
+	};
+	this.getField = function (iid, base, offset)
+	{
+		var abase = actual(base);
+		var strippedOff = stripTaints(offset);
+		var ret = abase[strippedOff.values];
+		offset = mergeTaints(strippedOff.values, strippedOff.taints);
+		var sv = rule.getFieldTaint(shadow(ret), shadow(offset));
+		if (sv !== rule.noTaint && typeof sv !== 'undefined')
+			return {result:new AnnotatedValue(ret, sv)};
+		else
+			return {result:ret};
+	};
+	this.putFieldPre = function (iid, base, offset, val)
+	{
+		return {base:base, offset:offset, val:val, skip:true};
+	};
+	this.putField = function (iid, base, offset, val)
+	{
+		var abase = actual(base);
+		var strippedOff = stripTaints(offset);
+		abase[strippedOff.values] = val;//todo, when offset tainted?
+		mergeTaints(strippedOff.values, strippedOff.taints);
+		return {result:val};
 	};
 }
-sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)());
+sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(config));
 })(J$);

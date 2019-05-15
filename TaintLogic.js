@@ -1,8 +1,12 @@
 //todo: --------------nodejs
 const Utils = new (require("./Utils").Utils)();
+const Log = new (require("./Log").Log)();
 //----------nodejs
 
-function TaintUnit() {}
+function TaintUnit(config)
+{
+	this.config = config;
+}
 TaintUnit.prototype.noTaint = false;
 TaintUnit.prototype.fullTaint = true;
 TaintUnit.prototype.arithmetic = function(left, right)
@@ -39,6 +43,11 @@ TaintUnit.prototype.escapeTaint = function (t ,type)
 {
 	return t;
 };
+TaintUnit.prototype.getFieldTaint = function (elemT, idxT)
+{//todo: maybe need to be changed for more option
+	return elemT;
+};
+
 // TaintUnit.prototype.compressTaint = function(s)
 // {
 // 	if (Array.isArray(s))
