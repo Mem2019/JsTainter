@@ -480,9 +480,11 @@ undefined
 
 ### Taint Analysis Rule
 
-For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the value inside the 
+For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of type `String`, but the implementation is a bit different. The reason is that for string variable, taint information is stored in another taint, instead of stored together with the character. //todo, maybe add a picture illustration
 
-  
+For `setField`, the current design is to directly assign the value to corresponding key.
+
+However, we may need to strip the key before applying them, because if the key is something like `[[AnnotatedValue(1, true)]]`, when casting to string, it will become `'[object Object]'`, which is not expected `'1'`.
 
 ## Native Function Call
 
