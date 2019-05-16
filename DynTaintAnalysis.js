@@ -846,7 +846,8 @@ function TaintAnalysis(rule)
 		var strippedOff = stripTaints(offset);
 		var sbase = shadow(base);
 		var ret;
-		if (typeof abase == "string" && Number.isInteger(strippedOff.values)
+		if (typeof abase == "string"
+			&& Number.isInteger(strippedOff.values)
 			&& strippedOff.values < sbase.length)
 		{//is accessing string character
 			var elemT = sbase[strippedOff.values];
