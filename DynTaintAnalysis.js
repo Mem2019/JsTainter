@@ -356,6 +356,14 @@ function TaintAnalysis(rule)
 		}
 	}
 
+	function getTaintResult(result, taint)
+	{
+		if (taint === rule.noTaint || typeof taint == 'undefined')
+			return result;
+		else
+			return new AnnotatedValue(result, taint);
+	}
+
 	function mergeTaintsH(val, taints)
 	{//pre: val and taints come from stripTaints function
 		for (var k in taints)
@@ -426,7 +434,7 @@ function TaintAnalysis(rule)
 			process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
-			return new AnnotatedValue(result, taint_state);
+			return getTaintResult(result, taint_state);
 		}
 	}
 	this.taintProp = {};
@@ -830,13 +838,23 @@ function TaintAnalysis(rule)
 	{
 		var abase = actual(base);
 		var strippedOff = stripTaints(offset);
-		var ret = abase[strippedOff.values];
-		offset = mergeTaints(strippedOff.values, strippedOff.taints);
-		var sv = rule.getFieldTaint(shadow(ret), shadow(offset));
-		if (sv !== rule.noTaint && typeof sv !== 'undefined')
-			return {result:new AnnotatedValue(ret, sv)};
+		var ret;
+		if (typeof abase == "string")
+		{
+			var sbase = shadow(base);
+			var elemT = sbase[strippedOff.values];
+			ret = abase[strippedOff.values];
+			var sv = rule.getStringCharTaint(elemT, strippedOff.taints);
+			mergeTaints(strippedOff.values, strippedOff.taints);
+			return getTaintResult(ret, sv);
+		}
 		else
-			return {result:ret};
+		{
+			ret = abase[strippedOff.values];
+			offset = mergeTaints(strippedOff.values, strippedOff.taints);
+			ret = rule.getFieldTaint(ret, shadow(offset));
+			return {result: ret};
+		}
 	};
 	this.putFieldPre = function (iid, base, offset, val)
 	{

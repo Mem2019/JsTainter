@@ -369,11 +369,120 @@ The problem is not only false positives that will be produced if bit-wise taint 
 
 
 
-## Get Field
+## Put and Get Field
 
-Array case, Object case, key is tainted...
+### Overview
 
-## Set Field
+`getField` is a JavaScript operation that obtains array element, object field, and character in string. Let's look at the behavior of **object** first.
+
+```javascript
+> a = {}
+{}
+> a["qwer"] = 1
+1
+> a.qwer
+1
+> a["qwer"]
+1
+> a
+{ qwer: 1 }
+```
+
+As shown above, `a["xxx"]` and `a.xxx` both give same behavior, which correspond to the same key in the object map. In addition, there are also some edge cases as always, for example:
+
+```javascript
+> a = {}
+{}
+> a[1] = '1'
+'1'
+> a[{}] = 'obj'
+'obj'
+> a['1']
+'1'
+> a[[[1]]]
+'1'
+> a['0x1']
+undefined
+> a
+{ '1': '1', '[object Object]': 'obj' }
+```
+
+When the key is something other than string, it will be converted to string first, then used as the key to obtain the value.
+
+The behavior of **array** is almost identical to object, except number keys are treated specially.
+
+```javascript
+> a = []
+[]
+> a[0] = 0
+0
+> a[3] = 3
+3
+> a.length
+4
+> a["qwer"] = 's'
+'s'
+> a[{}] = 'obj'
+'obj'
+> a[[[["qwer",]],]]
+'s'
+> a['0']
+0
+> a[new String('0')]
+0
+> a['0x0']
+undefined
+> a[[[[0]]]]
+0
+> a[[[['0']]]]
+0
+> a[NaN]
+undefined
+> a
+[ 0, , , 3, qwer: 's', '[object Object]': 'obj' ]
+```
+
+Unlike some other languages, in JavaScript, you don't get array out of bound when assigning the array with out-of-bound index; instead, the array is extended automatically. Also, we can also have string as the key in array, and things that is neither `String` nor `Number` will be converted to string automatically. However, `Number` type has priviledge: as long as a string is a numeric integer string, it will be regarded as integer instead of string. In other word, there is no numeric string key in `Array`, because they will all be regarded as numeric index.
+
+**String** is similar to array in how it handles the numeric string, but it does not have string as the key, and it remain unchanged when `putField` is applied.
+
+```javascript
+> a = "qwer"
+'qwer'
+> a[0]
+'q'
+> a['0']
+'q'
+> a[[[['0']]]]
+'q'
+> a[4] = 'k'
+'k'
+> a[0] = 'k'
+'k'
+> a
+'qwer'
+> a['qwer']
+undefined
+```
+
+For **other types**, they all return `undefined` and  remain unchanged when `getField` and `putField` respectively. However, there are some buit-in fields like `__proto__`, which is also the case for 3 types covered above.
+
+```javascript
+> x = 0x100
+256
+> x["test"] = 'test'
+'test'
+> x.test
+undefined
+> x.__proto__
+[Number: 0]
+```
+
+### Taint Analysis Rule
+
+For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the value inside the 
+
+  
 
 ## Native Function Call
 
@@ -559,4 +668,3 @@ Note that these 2 pieces of codes are in different files. The first code piece i
 1. static analysis?
 2. sandbox, security?
 3. too many native functions, can't do all of them...
-

@@ -47,7 +47,10 @@ TaintUnit.prototype.getFieldTaint = function (elemT, idxT)
 {//todo: maybe need to be changed for more option
 	return elemT;
 };
-
+TaintUnit.prototype.getStringCharTaint = function (baseT, offsetT)
+{
+	return [baseT];
+};
 // TaintUnit.prototype.compressTaint = function(s)
 // {
 // 	if (Array.isArray(s))
