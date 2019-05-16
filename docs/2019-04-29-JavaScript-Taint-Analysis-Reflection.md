@@ -661,12 +661,13 @@ if (f === 'assertTaint')
 
 Note that these 2 pieces of codes are in different files. The first code piece is in the JavaScript file that is going to be analyzed (e.i. `test.js`); while the second code piece is in the file that performs the dynamic taint analysis (e.i. `DynTaintAnalysis.js`) . Therefore, even if we have same `assertTaint` name as identifier in both files, there will not be any conflict.
 
-//todo: taint analysis for other operations, e.g. getfield, other native functions, e.g. String/Numer methods
+//todo: taint analysis for other operations, e.g. getfield, other native functions, e.g. String/Numer/Array/JSON methods
 
 //todo: logs, behavior according to configs, records
 
+//todo: report for ALL DTA algorithm
 
+1. static analysis? no need if not necessary
+2. sandbox, security? no need, but okay for extension
+3. too many native functions, can't do all of them... sure, just handle some common ones
 
-1. static analysis?
-2. sandbox, security?
-3. too many native functions, can't do all of them...

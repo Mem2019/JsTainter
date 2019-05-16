@@ -83,29 +83,7 @@ function TaintAnalysis(rule)
 	const isSolidStrInArr = (val, outArrs) => typeof val != 'undefined'
 		&& val !== null && outArrs.indexOf(val) === -1;
 
-	function getTaintArrayForArray(arr, outArrs)
-	{//pre: Array.isArray(aval)
-		if (arr.length === 0)
-			return [];
-		outArrs.push(arr);
-		var ret = [];
-		for (var i = 0; i < arr.length - 1; i++)
-		{//iterate except for last element
-			if (isSolidStrInArr(actual(arr[i]), outArrs))
-			{
-				ret = ret.concat(getTaintArrayH(arr[i], outArrs));
-			}
-			ret = ret.concat(false);//',' is not tainted
-		}
-		if (isSolidStrInArr(actual(arr[i]), outArrs))
-		{
-			ret = ret.concat(getTaintArrayH(arr[i], outArrs));
-		}
-		//Utils.assert(ret.length === (''+arr).length);
-		//cannot be true due to AnnotatedValue Object
-		outArrs.pop();
-		return ret;
-	}
+
 
 
 	function getTaintArray(val)
@@ -133,6 +111,29 @@ function TaintAnalysis(rule)
 			default:
 				throw Error("Currently does not support type \'" + typeof val + "\' for add");
 			}
+		}
+		function getTaintArrayForArray(arr, outArrs)
+		{//pre: Array.isArray(aval)
+			if (arr.length === 0)
+				return [];
+			outArrs.push(arr);
+			var ret = [];
+			for (var i = 0; i < arr.length - 1; i++)
+			{//iterate except for last element
+				if (isSolidStrInArr(actual(arr[i]), outArrs))
+				{
+					ret = ret.concat(getTaintArrayH(arr[i], outArrs));
+				}
+				ret = ret.concat(false);//',' is not tainted
+			}
+			if (isSolidStrInArr(actual(arr[i]), outArrs))
+			{
+				ret = ret.concat(getTaintArrayH(arr[i], outArrs));
+			}
+			//Utils.assert(ret.length === (''+arr).length);
+			//cannot be true due to AnnotatedValue Object
+			outArrs.pop();
+			return ret;
 		}
 		return getTaintArrayH(val, []);
 	}
@@ -644,6 +645,11 @@ function TaintAnalysis(rule)
 				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
 			return {result : undefined};
 		}
+		else if (f === "debug")
+		{
+			process.stdout.write("debug");
+			return {result : undefined};
+		}
 		if (Utils.isNative(f))
 		{
 			var strippedArgs, strippedBase;
@@ -789,7 +795,7 @@ function TaintAnalysis(rule)
 			{//base must be number, otherwise exception will be thrown
 				abase = actual(base);
 				if (!(abase instanceof Number) && typeof abase !== 'number')
-					throw throw TypeError("Number.prototype.toString is not generic");
+					throw TypeError("Number.prototype.toString is not generic");
 				strippedArgs = stripTaints(args);
 				aargs = strippedArgs.values;
 
@@ -838,10 +844,11 @@ function TaintAnalysis(rule)
 	{
 		var abase = actual(base);
 		var strippedOff = stripTaints(offset);
+		var sbase = shadow(base);
 		var ret;
-		if (typeof abase == "string")
-		{
-			var sbase = shadow(base);
+		if (typeof abase == "string" && Number.isInteger(strippedOff.values)
+			&& strippedOff.values < sbase.length)
+		{//is accessing string character
 			var elemT = sbase[strippedOff.values];
 			ret = abase[strippedOff.values];
 			var sv = rule.getStringCharTaint(elemT, strippedOff.taints);
