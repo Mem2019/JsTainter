@@ -9,7 +9,7 @@ function TaintUnit(config)
 }
 TaintUnit.prototype.noTaint = false;
 TaintUnit.prototype.fullTaint = true;
-TaintUnit.prototype.arithmetic = function(left, right)
+TaintUnit.prototype.arithmetic = function(left, right, op)
 {
 	return left || right;
 };

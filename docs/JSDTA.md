@@ -5,11 +5,125 @@ date:   2019-04-29 01:01:05 +0000
 categories: jekyll update
 ---
 
-# 0x00 Abstract
+# Overview
 
 Unlike binary program, whose behavior is simple and easy to analysis, JavaScirpt is highly dynamic and very complex, thus hard to analysis. I will cover possible implementations of data structure of shadow value along with JavaScript variable, and their pros and cons. Also, here is some of my reflection about the cases that we need to consider when implementing dynamic taint analysis for JavaScript, possible ways to deal with them, and the drawbacks of these approaches.
 
-# 0x01 Data Structure of Shadow Value
+#Jalangi2
+
+## Overview
+
+[`Jalangi2`](https://github.com/Samsung/jalangi2) is a dynamic analysis framework for JavaScript that supports instrumentation analysis. This framework can modify the source code of the program being analyzed and instrument code before and after each JavaScript operation. For example, before and after any JavaScript binary operators (e.g. `+`), we can instrument our own functions to inspect and modify the behavior of such operation. Since this framework has already implemented language-level preprocessing such parsing and instrumentation, developer who uses this framework does not have to worry about it. Instead, according to its [tutorial](https://manu.sridharan.net/files/JalangiTutorial.pdf), it is very easy to use this framework. Here is an example that instrument on the `binary` operator in JavaScript.
+
+```javascript
+//Analysis.js
+(function (sandbox)
+{
+function Analysis(rule)
+{
+	this.binaryPre = function (...) {...}
+	this.binary = function (...) {...}
+}
+sandbox.analysis = new Analysis();
+})(J$);
+```
+
+By setting these fields to the function we want, when binary operator such as `+` is executed, our functions will also be executed. The relative argument such as operands will be passed as argument, and we can also use return value of these functions to modify the behavior of the binary operator such as changing the result. 
+
+Then run `Jalangi2` framework using `nodejs`, passing `Analysis.js` and JavaScript program to be analyzed as argument to run the analysis. 
+
+Here is the full list of the JavaScript operations that can be instrumented, which already cover all possible JavaScript program behaviors.
+
+//todo, add pic and ref
+
+## [Shadow Value](https://mem2019.github.io/jekyll/update/2019/04/26/Jalangi2-Shadow-Value.html)
+
+`Shadow Value` is a concept formulated in [Jalangi paper](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.455.9073&rep=rep1&type=pdf). The key point is that there could be another shadow value associated with a variable. In the paper, `AnnotatedValue` class is used to denote the variable that has any shadow value along with it. The `value` field of this class is the original value of this variable, while `shadow` field is the shadow value associated with this variable. For example, if an integer variable `1337` has shadow value `true`, the variable will be an `AnnotatedValue` object with field `value` being `1337` and field `shadow` being `true`, denoted as `AnnotatedValue(1337, true)` (I will use this notation in the following report). This shadow value concept is important because `JsTainter` will use shadow value to record the taint state information about a variable, which is neccessaty in dynamic taint anaysis.
+
+However, I found that mechanism of shadow value of `Jalangi2`, works differently from the one mentioned in this [paper](https://people.eecs.berkeley.edu/~ksen/papers/jalangi.pdf). The reason might be that the version is different: the paper covers `Jalangi1` while I am using `Jalangi2`. Of course, `JsTainter` can use `Jalangi1` instead of `Jalangi2`, but `Jalangi1` has not been maintainted for many years, so using `Jalangi1` may have more risk of encountering bugs in the framework.
+
+In the paper (`Jalangi1`), it is suggested to use a `AnnotatedValue` to replace some variables, just as I discussed above, and as long as the variable is used for some operation, `actual(value)` is used to convert it to actual value for operation. For example, `actual(AnnotatedValue(1337, true)) === 1337`.  Then when our analysis callback function `analysis.binary` is called, `value` is passed as the arguments instead of `actual(value)`. The logic is shown as below, according to the seudo-codes in the paper.
+
+```javascript
+//definition of AnotatedValue
+function AnotatedValue(val, shadow)
+{
+	this.val = val;
+	this.shadow = shadow;
+}
+function actual(val)
+{
+	return val instanceof AnotatedValue ? val.val : val;
+}
+//when executing instrumented code of binary operator
+var result = actual(left) op actual(right) //call `actual` before used as operands 
+if (analysis && analysis.binary)//original `left` and `right` are passed
+    analysis.binary(op, left, right, result)
+```
+
+However, in Jalangi2, things works differently: here is the pseudo-code representing the source code logic of `Jalangi2` when binary operator is handled.
+
+```javascript
+
+function B(iid, op, left, right, flags) {
+	var result, aret, skip = false;
+
+	if (sandbox.analysis && sandbox.analysis.binaryPre) {
+		aret = sandbox.analysis.binaryPre(iid, op, left, right);
+		if (aret) {
+			op,left,right,skip = aret.op,aret.left,aret.right,aret.skip;
+		}//a `binaryPre` is added
+	}
+	if (!skip) {
+		result = left op right;
+	}//no `actual()` being applied before using as operands
+
+	if (sandbox.analysis && sandbox.analysis.binary) {
+        /*
+        `left` and `right` being passed to our `analysis.binary` handler
+        are same as ones used as operands,
+        which is different from the approach mentioned in paper
+        */
+		aret = sandbox.analysis.binary(iid, op, left, right, result);
+		if (aret) {
+			result = aret.result;
+		}
+	}
+	return (lastComputedValue = result);
+}
+```
+
+Therefore, it seems that `AnnotatedValue` class is not supported in `Jalangi2`, but instead, shadow value is associated with a object reference. `SMemory` is a mechanism that support shadow value feature in `Jalangi2`. However, the drawback of this approach is that we cannot have a shadow value assoicated with primitive value, including `string`. Therefore, since the approach of `Jalangi1` mentioned in the paper is better for me to use, I will define `AnotatedValue` by myself, and then define `analysis.binaryPre` to let `skip === true`, and perform calculation inside `analysis.binary` instead. Centainly, I will do this for all operations, not only binary operator.
+
+Here is the pseudo-codes that describe what I am thinking about.
+
+```javascript
+this.binaryPre = function(iid, op, left, right)
+{
+	return {op:op,left:left,right:right,skip:true}//skip
+}
+this.binary = function(iid, op, left, right, result)
+{
+	var result;
+	var aleft = actual(left);
+	var aright = actual(right);
+
+	result = left op right;
+	//use left and right to perform analysis
+
+	return {result : result} 
+}
+```
+
+In this way we can use the shadow value in the same way as `Jalangi1`. 
+
+However, such operation is still not perfectly correct. For example, `actual([AnnotatedValue(1337, true)])` will still give `[AnnotatedValue(1337, true)]` instead of `[1337]`, because `Array` is not an `AnnotatedValue` instance even if there is an `AnnotatedValue` instance as the array element. We need something that traverse the object recursively and replace all `AnnotatedValue` instances with their `value` fields, and recover them after operation is done. I will discuss this later when `strpTaints` and `mergeTaints` function implementions are covered.
+
+# Overall Design
+
+
+
+# Data Structure of Shadow Value
 
 Here the shadow value is the taint information of a particular variable. We can simply use a `boolean` to represent taint state, in which `true` means `tainted` and `false` means `not tainted`; we can also use an `boolean array` to represent taint state, in which boolean variables at different indeces represent taint state from `different taint sources`. The second approach provides more information but harder to implement. To make it more convinient, I will call such boolean variable and boolean array variable as `taint infomation variable`.
 
@@ -631,7 +745,13 @@ todo, there are some wired behavior
 
 What if the codes being analyzed is malicious and want to gain previlidge? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
 
+## Log
 
+In some cases that the dynamic taint analysis might fail to work, information should be presented to user that the code here might cause inaccurate result.
+
+### Arithmetic Operation
+
+In current design, we taint the result as long as one of the argument 
 
 # Test
 
@@ -661,13 +781,12 @@ if (f === 'assertTaint')
 
 Note that these 2 pieces of codes are in different files. The first code piece is in the JavaScript file that is going to be analyzed (e.i. `test.js`); while the second code piece is in the file that performs the dynamic taint analysis (e.i. `DynTaintAnalysis.js`) . Therefore, even if we have same `assertTaint` name as identifier in both files, there will not be any conflict.
 
-//todo: taint analysis for other operations, e.g. getfield, other native functions, e.g. String/Numer/Array/JSON methods
+1. report for ALL DTA algorithm
 
-//todo: logs, behavior according to configs, records
+   log and config and if necessary, record, which shold ALL be inside `TaintLogic`
 
-//todo: report for ALL DTA algorithm
+2. add other operation handling if they are commonly used in real world
 
-1. static analysis? no need if not necessary
-2. sandbox, security? no need, but okay for extension
-3. too many native functions, can't do all of them... sure, just handle some common ones
+   e.g. getfield, other native functions, e.g. String/Numer/Array/JSON methods
 
+3. 

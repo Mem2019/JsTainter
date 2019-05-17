@@ -1,6 +1,7 @@
 //todo: --------------nodejs
 const Utils = new (require("./Utils").Utils)();
 const assert = require("assert");
+const Log = new (require("./Log").Log)();
 //----------nodejs
 
 var config = new (function ()
@@ -53,7 +54,7 @@ function TaintAnalysis(rule)
 	{
 		if (b !== true)
 		{
-			process.stdout.write("Assertion failure at" + position);
+			Log.log("Assertion failure at" + position);
 			assert(false);
 		}
 	}
@@ -159,11 +160,12 @@ function TaintAnalysis(rule)
 			isNumAddOperands(actual(right)))
 		{//numeric add
 			var taint_state = rule.arithmetic(
-				shadow(left, rule.noTaint), shadow(right, rule.noTaint));
+				shadow(left, rule.noTaint),
+				shadow(right, rule.noTaint), op);
 
-			process.stdout.write(actual(left) + ' ' + op + ' ' +
+			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
-			process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 			return new AnnotatedValue(result, taint_state);
@@ -227,9 +229,9 @@ function TaintAnalysis(rule)
 				rule.compressTaint(shadow(left, rule.noTaint)),
 				rule.compressTaint(shadow(right, rule.noTaint)));
 
-			process.stdout.write(actual(left) + ' ' + op + ' ' +
+			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
-			process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 			return new AnnotatedValue(result, taint_state);
@@ -259,9 +261,9 @@ function TaintAnalysis(rule)
 				rule.compressTaint(shadow(left, rule.noTaint)),
 				rule.compressTaint(shadow(right, rule.noTaint)));
 
-			process.stdout.write(actual(left) + ' ' + op + ' ' +
+			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
-			process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 			return new AnnotatedValue(result, taint_state);
@@ -274,9 +276,9 @@ function TaintAnalysis(rule)
 			rule.compressTaint(shadow(left, rule.noTaint)),
 			rule.compressTaint(shadow(right, rule.noTaint)));
 
-		process.stdout.write(actual(left) + ' ' + op + ' ' +
+		Log.log(actual(left) + ' ' + op + ' ' +
 			actual(right) + ' = ' + result + '; ');
-		process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+		Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 		return new AnnotatedValue(result, taint_state);
@@ -430,9 +432,9 @@ function TaintAnalysis(rule)
 				rule.compressTaint(shadow(left, rule.noTaint)),
 				rule.compressTaint(shadow(right, rule.noTaint)));
 
-			process.stdout.write(actual(left) + ' ' + op + ' ' +
+			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
-			process.stdout.write(shadow(left, rule.noTaint) + ' ' + op + ' ' +
+			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 			return getTaintResult(result, taint_state);
@@ -596,7 +598,7 @@ function TaintAnalysis(rule)
 	{
 		if (typeof val === 'function')
 		{//sandbox
-			//process.stdout.write(''+val)
+			//Log.log(''+val)
 		}
 		//functinon for testing
 		if (typeof val === 'string')
@@ -622,7 +624,7 @@ function TaintAnalysis(rule)
 	};
 	this.endExecution = function()
 	{
-		process.stdout.write(JSON.stringify(this.taintProp) + '\n')
+		Log.log(JSON.stringify(this.taintProp) + '\n')
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -647,7 +649,7 @@ function TaintAnalysis(rule)
 		}
 		else if (f === "debug")
 		{
-			process.stdout.write("debug");
+			Log.log("debug");
 			return {result : undefined};
 		}
 		if (Utils.isNative(f))
@@ -823,7 +825,7 @@ function TaintAnalysis(rule)
 			//convert arguments to actual value
 
 			//todo: process other type of native function
-			process.stdout.write("sv " + JSON.stringify(sv));
+			Log.log("sv " + JSON.stringify(sv));
 			if (typeof sv !== 'undefined' && isTainted(sv))
 				return {result:new AnnotatedValue(ret, sv)};
 			else
@@ -831,7 +833,7 @@ function TaintAnalysis(rule)
 		}
 		else
 		{
-			//process.stdout.write('--------'+actual(base));
+			//Log.log('--------'+actual(base));
 			//if (isConstructor)
 			return {result:f.apply(base, args)};
 		}
