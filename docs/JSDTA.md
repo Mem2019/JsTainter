@@ -121,13 +121,61 @@ However, such operation is still not perfectly correct. For example, `actual([An
 
 # Overall Design
 
+//todo, because may modify in the future
+
+# Design of Shadow Value
+
+## Taint Information Variable
+
+`Taint Information Variable` is used to record the taint state of basic variable types such as number and single character. I will discuss how taint information variable, which are used to describe basic type only, can be used to describe taint state of complex types such as `Object` in next subsection. In this subsection, I will discuss several design choices about taint information variable. 
+
+### Boolean Variable
+
+This is the simplest design: the shadow value is simply `true` or `false`. `true` if the variable is tainted, and `false` if the variable is not tainted. This is the easiest design choice to implement.
+
+### Boolean Array for Sources
+
+User inputs of web page in browser can come from different sources. For example, user input can come from argument in URL and `<input>` HTML label. Because of that, it is necessary to be able to identify the source of the taint given a tainted variable. 
+
+To implement this, we can use a boolean array, in which different indeces denotes taint state from different source. For example, element at index 0 can be taint state from source URL argument, while element at index 1 can be the taint state from `<input>` HTML label. If one array element at particular index is `true`, it means current basic variable is tainted by the source corresponding to that index. 
+
+There is also an possible optimization: instead of using boolean array, we can use an integer instead, where each bit correspond to an original boolean variable in array. Such optimization saves space and time, but exerts limitation on number of sources: maximum 64 number of source if the integer is only 64-bit wide, for example.
+
+### Boolean Array for Bits
+
+Instead of having only one boolean variable for an integer, such array traces the taint information for every bit of the integer. This can be used to handle edge case of bit operation such as `&` and `|`. For example, the following code may cause false positive if we simply use a boolean variable to record the taint information.
+
+```javascript
+var t1,t2,r;
+//`t1` and `t2` are tainted integer
+t1 = t1 & 0xff;
+t2 = t2 & 0xff00;
+r = t1 & t2;
+```
+
+In this example, `r` must always be `0` whatever what `t1` and `t2` are, but if only a boolean variable is associated with the integer, false positive will be caused. If we taint the result as long as one of the operands are tainted (which is a common design), obviously `r` will be falsely tainted. However, if we trace the taint information at bit level, only` 0-7 bits` of `t1` and `8-15 bits` of `t2` are tainted at the final operation. Noting untainted bits to be all zeros, dynamic taint analysis can give the result that finally non of the bit in `r` is tainted.
+
+Such boolean array can also be optimized to integer like `Boolean Array for Sources`. In addition, since such design is independent from boolean array for sources, they can be combined so that the `taint infomation variable` is a 2D boolean array, although sounds very expensive.
+
+However, tracing at bit level is expensive and unnecessary. Cases like the example above rarely occur so it is not worthy to have such expensive design. To solve this problem without tracing taint infomration in bit level, we can log message when dynamic taint analysis is not sure about the result, and allow user customization about taint propagation rule for special cases, which will be covered later. //todo
+
+### Taint Level
+
+This is an "soft" version of boolean variable. Unlike //todo
+
+### Symbolic Expression
+
+This is actually not about taint analysis but about symbolic execution. //todo
 
 
-# Data Structure of Shadow Value
 
-Here the shadow value is the taint information of a particular variable. We can simply use a `boolean` to represent taint state, in which `true` means `tainted` and `false` means `not tainted`; we can also use an `boolean array` to represent taint state, in which boolean variables at different indeces represent taint state from `different taint sources`. The second approach provides more information but harder to implement. To make it more convinient, I will call such boolean variable and boolean array variable as `taint infomation variable`.
 
-Then I will discuss design choice(s) of different types of variables in JavaScipt.
+
+ we can simply use a `boolean` to represent taint state, in which `true` means `tainted` and `false` means `not tainted`; we can also use an `boolean array` to represent taint state, in which boolean variables at different indeces represent taint state from `different taint sources`. The second approach provides more information but harder to implement. To make it more convinient, I will call such boolean variable and boolean array variable as `taint infomation variable`.
+
+## Shadow Value for Different Types
+
+Then I will discuss design choice(s) of different types of variables in JavaScipt. 
 
 ## Number
 
