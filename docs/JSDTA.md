@@ -455,17 +455,15 @@ undefined
 
 Luckily, value in `prototype` will also contribute when an array is converted to string, but only if within the range of `a.length`. Therefore, this does not affect our implementation so much. 
 
-Considering these factors, we can implement the function that obtain the taint array when an JavaScript `Array` is converted to string.
-
-//todo: maybe add some codes here? 
+Considering these factors, we can implement the function that obtain the taint array when an JavaScript `Array` is converted to string. We iterate over array using for loop bounded by `length`, convert elements to taint array by using recursion call if necessary, and `concat` them together; the `','` in between is always untainted.
 
 ### Binary Arithmetic Operator
 
-It works fine for both operands to be numeric: the result is tainted as long as one of the operands is tainted. But for other types, it becomes hard to analyze. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
+Binary arithmetic operators are operators like `-`, `*`, `/` and `%`. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But types other than `Number`, things become hard to analyze. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
 
 //todo: table
 
-It is obvious that as long as one of the operands is `object`, the result is always `NaN`. Since in our design, `Object` instance is never tainted (note: but value inside them could be tainted), the result should also always be untainted as long as one of the operands is `Object`. 
+It is obvious that as long as one of the operands is `Object`, the result is always `NaN`. Since in our design, `Object` instance is never tainted (note: but value inside them could be tainted), the result should also always be untainted as long as one of the operands is `Object`. 
 
 Another possible situation is when the operand is string. When `string` is used as operand of arithmetic operation, it will be converted to number first before doing arithmetic operation except `+`.
 
@@ -475,10 +473,12 @@ Another possible situation is when the operand is string. When `string` is used 
 > "3" - "10"
 -7
 > "3" + "10"
-'310'
+'310' // only `+` will perfrom string concat
 ```
 
-If the string will be converted to `NaN`, the result will always be `NaN`. The result should not be tainted if the string is always converted to `NaN` no matter how input is changed. My approach to deal with it is to convert all tainted characters to `'0'` or any other number, then try to convert the string to number. If it is still `NaN`, the result should not be tainted, since the result is unaffected by user input; if it becomes a number, the result should be tainted. However, even with such careful design, false positive could still come up. For example:
+The result should not be tainted if the string is always converted to `NaN` no matter how tainted characters changed. For example, `AnnotatedValue("a123", [false,true,true,true]) - 0` should be untainted, because no matter how last 3 characters are changed, the result will always be `NaN` due to the existence of `'a'` at index 0; and `AnnotatedValue("1ea", [false,false,true]) - 0` should be tainted, because if we change last `'a'` to a number such as `'1'`, the result will not be `NaN` but something we can control.
+
+My approach to detect if the numeric result is actually controllable is to replace all tainted characters by number characters such as `'0'`, then try to convert the string to number. If it is still `NaN`, the result should not be tainted; if it becomes a number, the result should be tainted. However, even with such careful design, false positive could still come up. For example:
 
 ```javascript
 var b; 
@@ -493,11 +493,12 @@ var r = String(b) - i;
 
 Case like this is unavoidable, unfortunately.
 
-If the operands do not always give `NaN`, we apply the arithmetic taint propagation rule: result is tainted as long as one operand is tainted. 
-
 ### Shift operator
 
-In the shift operator, the value that would be evaluated to `NaN` will be regarded as `0`.
+Shift operators are `<<`, `>>` and `>>>`. The taint propagation rule for shift operator can also be similar to arithmetic ones: result is tainted if one of the operands are tainted. However, special cases are a bit different: 
+
+1. The result is not `NaN` if there is any `NaN` among operands. Instead, the value that would be evaluated to `NaN` will be regarded as `0`. 
+2. If the left hand side is always evaluated to 0 (e.g. including `NaN` case), the result should be untainted since result is always `0` no matter how operand at right hand side changes.
 
 ```javascript
 > 123 << "asc"
@@ -506,17 +507,16 @@ In the shift operator, the value that would be evaluated to `NaN` will be regard
 0
 > 123 << {}
 123
-> 123 << [1] //todo, this case seems to also works for arith
-246
 > 123 << [1,2]
 123
+// operand that will be casted to NaN will be regarded as 0
+> 123 << [1]
+246
 ```
 
 Here is the table that shows all possible combinations of different types.
 
 //todo add table
-
-Therefore, as long as LHS will be evaluated to `NaN`, the result is untainted; otherwise, the result is tainted according to arithmetic operation rule.
 
 ### Boolean Operator
 

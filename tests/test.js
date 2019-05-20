@@ -18,15 +18,16 @@ var obj;
 //test constructor
 function Test(p)
 {
-	this.test = p;
+	this.test1 = p + 3;
+	this.test2 = p - 3;
 }
-obj = new Test("ta1nt3d_int0");
-assertTaint(obj.test, true);
-assert(obj.test === 0);
+obj = new Test("ta1nt3d_intNaN");
+assertTaint(obj.test1, true);
+assert(isNaN(obj.test1));
 with (obj)
 {
-	assertTaint(test, true);
-	assert(test === 0);
+	assertTaint(test2, true);
+	assert(isNaN(test2));
 }
 assert(obj instanceof Test);
 
@@ -208,6 +209,7 @@ assertTaint((taintedStr + '0x' + taintedStr) % 7, false);
 assertTaint((taintedStr + 'e' + taintedStr) % 7, true);
 
 //test shift <<
+assertTaint([taintedInt] << [taintedInt], true);
 assertTaint(taintedStr << NaN, true);
 assertTaint(taintedStr << null, true);
 assertTaint(taintedStr << "asd", true);

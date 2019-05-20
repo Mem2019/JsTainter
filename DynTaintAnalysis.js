@@ -206,13 +206,9 @@ function TaintAnalysis(rule)
 		var s = shadow(rawVal, rule.noTaint);
 		var t = typeof val;
 		var b = (t === 'string') && alwaysGiveNaNStr(val, s);
-		/*if (b || rule.isTainted(s))
-			Log.log("Tainted String is producing NaN, " +
-				"assuming result to be untainted, " +
-				"change the input to number for higher accuracy");*/
 		return (t === 'object' && val !== null &&
 			alwaysGiveNaNStr(''+val, rule.toStringTaint(val, s), rule)) ||
-			t === 'undefined' || b || (t === 'number' && isNaN(val));
+			t === 'undefined' || b || (t === 'number' && isNaN(val) && isUntainted(s));
 	}
 //string that will always produce NaN
 
