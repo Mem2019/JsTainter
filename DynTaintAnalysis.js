@@ -834,8 +834,32 @@ function TaintAnalysis(rule)
 		else
 		{
 			//Log.log('--------'+actual(base));
-			//if (isConstructor)
-			return {result:f.apply(base, args)};
+			//if (isConstructor)'
+			function newInstance(constructor, args)
+			{//https://stackoverflow.com/questions/3362471/how-can-i-call-a-javascript-constructor-using-call-or-apply
+				var Temp = function(){}, // temporary constructor
+					inst; // other vars
+				// Give the Temp constructor the Constructor's prototype
+				Temp.prototype = constructor.prototype;
+				// Create a new instance
+				inst = new Temp;
+				// Call the original Constructor with the temp
+				// instance as its context (i.e. its 'this' value)
+				ret = constructor.apply(inst, args);
+				// If an object has been returned then return it otherwise
+				// return the original instance.
+				// (consistent with behaviour of the new operator)
+				return Object(ret) === ret ? ret : inst;
+			}
+			if (isConstructor)
+			{
+				return {result:newInstance(f, args)};
+			}
+			else
+			{
+				return {result:f.apply(base, args)};
+			}
+
 		}
 	};
 	this.getFieldPre = function(iid, base, offset)

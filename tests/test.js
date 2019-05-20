@@ -9,6 +9,40 @@ var taintedArr;
 var s,a;
 var obj;
 
+//test constructor
+function Test(a)
+{
+	this.a = a;
+}
+obj = new Test("ta1nt3d_int0");
+assertTaint(obj.a, true);
+assert(obj.a === 0);
+
+//test eval
+taintedInt = "ta1nt3d_int0";
+a = undefined;
+eval("a = taintedInt + 0");
+assert(a === 0);
+assertTaint(a, true);
+
+//test function
+function add(a, b)
+{
+	return a+b;
+}
+
+const add2 = function (a,b) {return a+b};
+taintedInt = "ta1nt3d_int0";
+a = add(taintedInt, 0);
+assertTaint(a, true);
+assert(a === 0);
+a = add2(a, 0);
+assertTaint(a, true);
+assert(a === 0);
+
+
+
+
 //test get&put field
 obj = {};
 assertTaint(obj["something"], false);

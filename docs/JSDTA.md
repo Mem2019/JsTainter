@@ -277,9 +277,11 @@ The implementation for `stripTaints` is clear and simple, we check the variable 
 
 ## Binary Operators
 
+In this subsection I will discuss taint propagation rule design for binary operator in this project. Because there is no operator overloads in JavaScript, the behavoirs of binary operators are always certain.
+
 ### Add
 
-Since there is no overloading operator in JavaScript, there are only 2 functionalities for `+` operator: *numeric plus* and *string concatination*. I have written a script that shows the behavior of `+` for different types:
+In JavaScript, there are only 2 functionalities for `+` operator: *numeric plus* and *string concatination*. However, according to different operand types, the behavior of `+` varies. It's not as simple as that `+` is string concatenation if both operands are `String`, but we need to also consider the case when operands are 2 objects. I have written a script that shows the behavior of `+` for different types of operands:
 
 ```javascript
 function Test()
@@ -319,7 +321,9 @@ for (var t1 in typeVals)
 
 //todo: add a picture
 
-Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` tyoe, so we can regard them as string concatenation. For string concatination, this will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function that takes a value as input and returns the corresponding taint array if that value is converted to string. The argument value does not have to be `actual value` (e.i. can be `AnnotatedValue`). There are serveral cases to consider:
+Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` tyoe, so we can regard them as string concatenation. 
+
+String concatination will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are serveral cases to consider:
 
 **String**
 
@@ -327,7 +331,7 @@ If the value is string, just return its shadow value directly, since nothing wil
 
 **Number, Boolean and Undefined**
 
-In current implementation, the method is easy: if the shadow value says the value is tainted, then every character is tainted when it is converted to `string`; if the shadow value says the value is untainted, then every character is untainted when it is converted to `string`. However, such design has drawbacks: the string is tainted even if the string cannot be completely controlled by the user who provides the input, and this will cause false positive if the goal is to detect vulnerability such as `XSS`. For example, consider the following code:
+In current implementation, the method is easy: if the shadow value is `true`, which means the variable is tainted, then every character is tainted when it is casted to `String`; if the shadow value is `false`, which means the variable is untainted, then every character is untainted when it is casted to `String`. However, drawback exists in such design: the string is tainted even if the string cannot be completely controlled by the user who provides the input. In other word, we lose the information that the string can only be partly controlled by user. If we are using this taint analysis to perform automatic vulnerability detection, this will cause false positive if the goal is to detect vulnerability such as `XSS`. For example, consider the following code:
 
 ```javascript
 //variable `input` is tainted and can be controlled by attacker
@@ -335,11 +339,11 @@ var num = parseInt(input);
 document.write("Age: " + num);
 ```
 
-The num must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into sink is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy that can specify different `taint level` (e.g. use `enum` instead of `boolean`). When it is sanitized, the taint state will be somewhat different from the taint state before sanitizing.
+The num must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into `document.write` is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as `taint level` that has been discussed above. //When it is sanitized, the taint state will be somewhat different from the taint state before sanitizing.
 
 **Array**
 
-When array is converted to string, every element is converted to string, and joined using `','`, for example
+Before looking at how `getTaintArray` for `Array` type can be implemented, we may need to look at the behavior when `Array` is converted to `String`: when array is casted to string, every element is converted to string, and joined using `','`, for example
 
 ```javascript
 > ''+[{a:1},1,"test", true, [1,4]]
@@ -354,21 +358,21 @@ However, there are serveral special cases to note. *Firstly*, array can also has
 > var a = []
 undefined
 > a[0] = 1
-1
+1 // assign to a integer index
 > a[1] = 2
-2
+2 // assign to another integer index
 > a[-1] = -2
--2
+-2 // assign to a negative integer
 > a["key"] = "test"
-'test'
+'test' // assign to a string key 
 > a[a] = 5
-5
+5 // assign to a array key
 > a[{}] = 'obj'
-'obj'
+'obj' // assign to a object key
 > a[10000000000000000000000000000000000000000000000000000000]='big'
-'big'
+'big' // assign to a large integer
 > a[0.1] = 0.1
-0.1
+0.1 // assign to a floating point number
 > a
 [ 1,
   2,
@@ -378,8 +382,10 @@ undefined
   '[object Object]': 'obj',
   '1e+55': 'big',
   '0.1': 0.1 ]
+/*except 0 and 1, everything else is converted to string before being used as key*/
 > ''+a
 '1,2'
+/*however, when casted to String, value inside string key will not be used*/
 ```
 
 However, as shown clearly above, these value bounded with `string` key will not contribute when the array is converted to `string`, and any type other than positive small integer will be converted to `string` as key.
@@ -396,19 +402,18 @@ undefined
 > a[2] = "2"
 '2'
 > a[3] = undefined
-undefined
+undefined // assign `undefined` to index 3, also index 1 is not assigned so it's also undefined
 > a[4] = "4th"
 '4th'
 > a[5] = null
-null
+null // assign `null` to index 5
 > a[6] = 'six'
 'six'
-> a[7] = a
-[ 'first', , '2', undefined, '4th', null, 'six', [Circular] ]
-> a
+> a[7] = a //assign circular reference at index 7
 [ 'first', , '2', undefined, '4th', null, 'six', [Circular] ]
 > ''+a
 'first,,2,,4th,,six,'
+/*cast to string, obviously `null`, `undefined` and circular reference is empty string*/
 ```
 
 If the index is never assigned or has value `undefined`, `null` or circular reference, it will simply be converted to empty string. The way to define circular structure is when an element is the reference to any outter arrays, for example:
@@ -418,9 +423,9 @@ If the index is never assigned or has value `undefined`, `null` or circular refe
 []
 > a[0] = []
 []
-> a[0][0] = a
+> a[0][0] = a // assign circular reference, although not direct circular reference
 [ [ [Circular] ] ]
-> a[0][1] = a[0]
+> a[0][1] = a[0] // assign direct circular reference
 [ [ [Circular] ], [Circular] ]
 > a
 [ [ [Circular], [Circular] ] ]
@@ -437,15 +442,15 @@ undefined
 > Array.prototype[0] = 1
 1
 > a.length
-0
+0 // array prototype will not make the array longer
 > ''+a
-''
+'' // array prototype will not contribute when casted to string if the length <= index of prototype
 > a[2] = 2
 2
 > a.length
 3
 > ''+a
-'1,,2'
+'1,,2' // however, prototype will contribute if length > index of prototype
 ```
 
 Luckily, value in `prototype` will also contribute when an array is converted to string, but only if within the range of `a.length`. Therefore, this does not affect our implementation so much. 
