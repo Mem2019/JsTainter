@@ -9,14 +9,27 @@ var taintedArr;
 var s,a;
 var obj;
 
+//const lambda = (a,b) => a+b;
+
+//todo: instrumentCode and instrumentCodePre
+//function antiInstrumentation(){var a = 3;}
+//assert(String(antiInstrumentation) === "function antiInstrumentation(){var a = 3;}");
+
 //test constructor
-function Test(a)
+function Test(p)
 {
-	this.a = a;
+	this.test = p;
 }
 obj = new Test("ta1nt3d_int0");
-assertTaint(obj.a, true);
-assert(obj.a === 0);
+assertTaint(obj.test, true);
+assert(obj.test === 0);
+with (obj)
+{
+	assertTaint(test, true);
+	assert(test === 0);
+}
+assert(obj instanceof Test);
+
 
 //test eval
 taintedInt = "ta1nt3d_int0";
