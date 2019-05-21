@@ -209,7 +209,8 @@ assertTaint((taintedStr + '0x' + taintedStr) % 7, false);
 assertTaint((taintedStr + 'e' + taintedStr) % 7, true);
 
 //test shift <<
-assertTaint([taintedInt] << [taintedInt], true);
+(a,b) => a && b;
+//assertTaint([taintedInt] << [taintedInt], true);
 assertTaint(taintedStr << NaN, true);
 assertTaint(taintedStr << null, true);
 assertTaint(taintedStr << "asd", true);

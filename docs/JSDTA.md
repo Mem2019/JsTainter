@@ -520,11 +520,15 @@ Here is the table that shows all possible combinations of different types.
 
 ### Boolean Operator
 
-This is even complicated, and could easily produce false negatives/positives; also when `==` is used, things will get more complicated. In addition, for `||` and `&&`, we also need to consider the case when operands are not boolean... For example, `("a" || "b") === "a"` 
+There are two types of boolean operators: comparison such as `==`, `<` and `>`; logic such as `&&` and `||`. 
+
+For comparison, the taint propagation rule is still same: taint the result if one of the operands is tainted. However, for expression like `tainted == tainted`, where `tainted` is a tainted integer, the result is always true regardless how variable `tainted` changes, but it will still be marked as tainted according the current rule design. Fortunately, situation like this rarely occurs in real program.  
+
+For logic, Jalangi2 will simply treat it as conditional expression: therefore, these operators are not treated as binary operators but as conditional jumps. They would not cause `binaryPre` and `binary` handlers to be called, but would cause `conditional` handler to be called. For example, `a && b` will be translated to `a ? b : a`, therefore not a binary operator at all.
 
 ### Bit-wise Operator
 
-The problem is not only false positives that will be produced if bit-wise taint information is not used, we may also need to consider cases like `"a" | "b"`
+As I suggested in last section, if bit-wise taint tracing is used, taint tracing will much more accurate here. However, since this is not necessary, we do not employ such design. Instead, we treat it in the same way as comparison operators like `==`. Except for `&` operation, where if one of operands would always be evaluated to 0, the result will also always be 0, so we mark the result as untainted no matter another operand is tainted or not.  
 
 
 
@@ -538,16 +542,14 @@ The problem is not only false positives that will be produced if bit-wise taint 
 > a = {}
 {}
 > a["qwer"] = 1
-1
+1 // put field
 > a.qwer
-1
-> a["qwer"]
-1
+1 //a["qwer"] is equavalent to a.qwer
 > a
 { qwer: 1 }
 ```
 
-As shown above, `a["xxx"]` and `a.xxx` both give same behavior, which correspond to the same key in the object map. In addition, there are also some edge cases as always, for example:
+As shown above, `a["xxx"]` and `a.xxx` both give same behavior. In addition, there are also some edge cases as always, for example:
 
 ```javascript
 > a = {}
@@ -555,13 +557,13 @@ As shown above, `a["xxx"]` and `a.xxx` both give same behavior, which correspond
 > a[1] = '1'
 '1'
 > a[{}] = 'obj'
-'obj'
+'obj' // {} will be casted to string first before used as key
 > a['1']
-'1'
+'1' //a['1'] is equavalent to a[1], for the same reason
 > a[[[1]]]
-'1'
+'1' //[[1]] will be casted to string first, which is '1'
 > a['0x1']
-undefined
+undefined //'0x1' cannot be casted to 1
 > a
 { '1': '1', '[object Object]': 'obj' }
 ```
@@ -578,17 +580,17 @@ The behavior of **array** is almost identical to object, except number keys are 
 > a[3] = 3
 3
 > a.length
-4
+4 // the length is dependent on largest index being assigned
 > a["qwer"] = 's'
-'s'
+'s' // assign using string as the key
 > a[{}] = 'obj'
-'obj'
+'obj' //{} will also be casted to string first
 > a[[[["qwer",]],]]
-'s'
+'s' //same, casted to string before used as key
 > a['0']
-0
+0 //a['0'] is equavalent to a[0], which means numeric string will be casted to int
 > a[new String('0')]
-0
+0 //new String('0') behave same as '0'
 > a['0x0']
 undefined
 > a[[[[0]]]]
@@ -608,12 +610,12 @@ Unlike some other languages, in JavaScript, you don't get array out of bound whe
 ```javascript
 > a = "qwer"
 'qwer'
-> a[0]
-'q'
-> a['0']
-'q'
-> a[[[['0']]]]
-'q'
+> a[1]
+'w'
+> a['1']
+'w' // numeric string will be treated as integer
+> a[[[['1']]]]
+'w' // cast to string first before used as key
 > a[4] = 'k'
 'k'
 > a[0] = 'k'
@@ -639,7 +641,7 @@ undefined
 
 ### Taint Analysis Rule
 
-For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of type `String`, but the implementation is a bit different. The reason is that for string variable, taint information is stored in another taint, instead of stored together with the character. //todo, maybe add a picture illustration
+For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of `String` type, but the implementation is a bit different due to different structures. The reason is that for string variable, taint information is stored in another taint, instead of stored together with the character. //todo, maybe add a picture illustration
 
 For `setField`, the current design is to directly assign the value to corresponding key.
 
