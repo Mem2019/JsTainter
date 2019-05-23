@@ -212,15 +212,14 @@ function TaintAnalysis(rule)
 	}
 //string that will always produce NaN
 
-	function arithTaintProp(left, right, result, op)
+	function binaryTaintProp(callback, left, right, result, op)
 	{
-		if (alwaysGiveNaN(left) ||
-			alwaysGiveNaN(right))
+		if (callback(left, right))
 		{
-			return result;//no taint
+			return result;
 		}
 		else
-		{//might still be false positive if s == 'true'
+		{
 			var taint_state = rule.arithmetic(
 				rule.compressTaint(shadow(left, rule.noTaint)),
 				rule.compressTaint(shadow(right, rule.noTaint)));
@@ -230,8 +229,18 @@ function TaintAnalysis(rule)
 			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
-			return new AnnotatedValue(result, taint_state);
+			if (taint_state !== rule.noTaint)
+				return new AnnotatedValue(result, taint_state);
+			else
+				return result;
 		}
+	}
+
+	function arithTaintProp(left, right, result, op)
+	{
+		return binaryTaintProp((left, right) =>
+			alwaysGiveNaN(left) || alwaysGiveNaN(right),
+			left, right, result, op);
 	}
 
 	function isTaintAsNum(val)
@@ -245,39 +254,18 @@ function TaintAnalysis(rule)
 		v === null || alwaysGiveNaN(v) ||
 		(typeof v == "number" && (isNaN(v) || v === 0));
 
+
+
+
 	function shiftTaintProp(left, right, result, op)
 	{
-		if (isZeroInOper(left))
-		{//if LHS is always NaN, result is always 0
-			return result;
-		}
-		else
-		{//might still be false positive if s == 'true'
-			var taint_state = rule.arithmetic(
-				rule.compressTaint(shadow(left, rule.noTaint)),
-				rule.compressTaint(shadow(right, rule.noTaint)));
-
-			Log.log(actual(left) + ' ' + op + ' ' +
-				actual(right) + ' = ' + result + '; ');
-			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
-				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
-
-			return new AnnotatedValue(result, taint_state);
-		}
+		//if LHS is always NaN, result is always 0
+		return binaryTaintProp((left) => isZeroInOper(left), left, right, result, op);
 	}
 
 	function cmpTaintProp(left, right, result, op)
 	{//todo, consider more cases to improve accuracy
-		var taint_state = rule.arithmetic(
-			rule.compressTaint(shadow(left, rule.noTaint)),
-			rule.compressTaint(shadow(right, rule.noTaint)));
-
-		Log.log(actual(left) + ' ' + op + ' ' +
-			actual(right) + ' = ' + result + '; ');
-		Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
-			shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
-
-		return new AnnotatedValue(result, taint_state);
+		return binaryTaintProp(()=>false, left, right, result, op);
 	}
 
 
