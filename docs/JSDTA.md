@@ -641,11 +641,11 @@ undefined
 
 ### Taint Analysis Rule
 
-For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of `String` type, but the implementation is a bit different due to different structures. The reason is that for string variable, taint information is stored in another taint, instead of stored together with the character. //todo, maybe add a picture illustration
+For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of `String` type, but the implementation is a bit different due to different structures. For example, an tainted array `[1,2]` would have structure `[AnnotatedValue(1,true), AnnotatedValue(2,true)]`, while an tainted string `"12"` would have structure `AnnotatedValue("12", [true,true])`. If we fetch index 0 (e.i. `a[0]`), the array one should give `AnnotatedValue(1,true)` which can be obtained through directly accessing that array, while the string one should give `AnnotatedValue("1", [true])`, whichi need us to fetch index 0 from both `value` and `shadow` fields and puts them into an newly created `AnnotatedValue`.
 
 For `setField`, the current design is to directly assign the value to corresponding key.
 
-However, we may need to strip the key before applying them, because if the key is something like `[[AnnotatedValue(1, true)]]`, when casting to string, it will become `'[object Object]'`, which is not expected `'1'`.
+However, such rules may give false negatives. For example, when `base64` is implemented, a index that might be tainted is used to access a constant `base64` array. The result should be tainted since there is information propagation, but if we ignore the taint state of index the result will be untainted since the array itself is not tainted, which is false negatives. To mitigate such error, we can let user know when a tainted key is used to access an `Object`, and enable user to custom taint propagation rule, which will be covered later. //todo 
 
 ## Native Function Call
 
@@ -653,7 +653,13 @@ However, we may need to strip the key before applying them, because if the key i
 
 The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, `alert` is a built-in function when JavaScript is running in the browser, and `Number` is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
 
-Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression `/function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/`. Note that the reason why I choose `Function.prototype.toString` is to prevent the case of code injection. The reason is that the code that `JsTainter` is analyzing might be malicious. It can rewrite the `toString` method of the variable being called as function, so that the identification of native function might not work as expected, and this might also cause security issue. The example of this kind of attack is shown below.
+Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression.
+
+```
+/function a-zA-Z_()[ \t\n]{[ \t\n][native code][ \t\n]}/
+```
+
+//todo: may delete this Note that the reason why I choose `Function.prototype.toString` is to prevent the case when `toString` of the object . The reason is that the code that `JsTainter` is analyzing might be malicious. It can rewrite the `toString` method of the variable being called as function, so that the identification of native function might not work as expected, and this might also cause security issue. The example of this kind of attack is shown below.
 
 ```javascript
 var f = {};
@@ -663,13 +669,13 @@ f();
 
 ### Native Function Call Handler
 
-In `Jalangi2` framework, we can set `invokeFunPre` and `invokeFun` fields of analysis class as handlers, and they will be called before and after any function call is made, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are not stripped. Thus, instead, work is done in `invokeFun` handler by `JsTainter`.
+In `Jalangi2` framework, we can set `invokeFunPre` and `invokeFun` fields of `analysis class` as function handlers, and they will be called before and after any function call is made in the program being analyzed, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are not stripped. Thus, instead, the function is called in `invokeFun` handler by `JsTainter`.
 
-In `invokeFun` handler, some checks are done against `f`, the function being called in this function call operation. If it falls into the category of native function, a big `switch` statement will be used to check against the value of `f` , and jump to the corresponding case, in which the taint propagation logic and actual function call are implemented for that particular native function.
+In `invokeFun` handler, we firstly check if `f` (the variable being called) equals to specific strings, if so, some assertion function is called. This piece of codes is used for testing purpose, which will be covered in subsequent section, but this code will be removed in the final product. Then we try to check if the function is native function. If it falls into the category of native function, a big `switch` statement will be used to check which native function `f` is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function.
 
 ### Native Function Rules
 
-In this subsubsectinon I will cover the detail of handler for different native functions.
+In this subsubsectinon I will cover the detail of handler for each different native function.
 
 **String.prototype.substr**
 
@@ -679,33 +685,37 @@ The `substr` function, as its name suggests, takes the sub-string of given strin
 
 ```javascript
 > String.prototype.substr.apply(123456789, [2,3])
-'345'
+'345' // 123456789 will be converted to '123456789' first
 > String.prototype.substr.apply({}, [2,10])
-'bject Obje'
+'bject Obje' // {} will be converted to '[object Object]' first
 > String.prototype.substr.apply([1,2,3,4,5,6,7,8], [2,3])
-'2,3'
+'2,3' // the array will be converted to '1,2,3,4,5,6,7,8' first
 ```
 
-*Secondly*, index can be negative, and when it is negative, it will start from the end. Also, index and length does not have to be `Number`; if they are not `Number`, they will be converted to `Number` first. When they are evaluated to `NaN`, it will be regarded as `0`.
+*Secondly*, index can be negative, and when it is negative, it will start from the end (e.i. `-x` has same effect as `length-x`). Also, index and length does not have to be `Number`; if they are not `Number`, they will be converted to `Number` first. When they are evaluated to `NaN`, they will be regarded as `0`.
 
 ```javascript
 > "abcdefghij".substr(-3,2)
 'hi'
 > "abcdefghij".substr("abcdefghij".length-3,2)
 'hi'
+//case of negative index
 > "abcdefghij".substr(-100, 3)
 'abc'
+//but index will be regard as 0 if index < -length
 > "abcdefghij".substr(NaN, 3)
 'abc'
 > "abcdefghij".substr({}, 3)
 'abc'
+//anything that will be converted to NaN will be regarded as 0
 > "abcdefghij".substr([[[3]]], [3])
 'def'
 > "abcdefghij".substr('3', '3')
 'def'
+//anything that will be casted to numeric string will be regarded as number
 ```
 
-When `substr` is handled, we must also slice the taint array in the same way as `substr`. For example, for a string `AnnotatedValue("AABB", [true,true,false,false])`, and `substr(1,1)` is applied, the result should be `AnnotatedValue("AB", [true,false])`. However, if we use `Array.prototype.slice` to slice the taint array of string in `substr` operation, we will have too many cases to consider. Thus, I came up with a quick and dirty way to implement it: the taint array can be converted to string first, then apply the `substr` with the same argument, and finally convert it back to taint array. For each character of the transformed string, its ascii value is the index to the taint array, so what `taintArrToStr` actually does is to generate a string with same length and characters with ascending values starting from `'\u0000'`. After `substr` is applied, the ascii values are used as indeces and mapped back to the taint array elements, which are joined togeter to be the result. A piece of code may illustrate my idea better.
+When `substr` is handled, we must also slice the taint array in the same way as `substr`. For example, for a string `AnnotatedValue("AABB", [true,true,false,false])`, and `substr(1,2)` is applied, the result should be `AnnotatedValue("AB", [true,false])`. However, if we use `Array.prototype.slice` to slice the taint array of string in `substr` operation, we will have too many cases to consider. Thus, I came up with a quick and dirty way to implement it: the taint array can be converted to string first, then apply the `substr` with the same argument, and finally convert it back to taint array. I have implemented a function called `taintArrToStr`. In this function, for each character of the result string, the Unicode value is the index to the taint array, so what this function actually does is to generate a string with same length and characters with ascending values starting from `'\u0000'`. Another function that I have implemented is `strToTaintArr`. This function is called after `substr` is applied: the Unicode values are used as indexes to fetch the taint array elements, which are joined together to be the result. A piece of code may illustrate my idea better.
 
 ```javascript
 > var s = taintArrToStr([true, false, true, false])
@@ -717,7 +727,7 @@ When `substr` is handled, we must also slice the taint array in the same way as 
 [false, true]
 ```
 
-However, the disadvatange of this approach is that the maximum length of string cannot exceed 65536, the max value of numeric value of character, but fortunately string with such big size rarely occurs.
+However, the disadvantage of this approach is that the maximum length of string cannot exceed 65536, the max value of numeric value of character, but fortunately string with such big size rarely occurs.
 
 **Number**
 
@@ -725,7 +735,7 @@ This function convert variable to `Number`, we can just use `rule.compressTaint`
 
 **String.prototype.charAt**
 
-This function obtains the character at given index, which should return the same taint information as that of charcter at that index. For example, `charAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue("B", [false])`.
+This function obtains the character at given index, which should return the same taint information as that of character at that index. For example, `charAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue("B", [false])`.
 
 However, there are some special cases. The `this` argument does not have to be string type, so `getTaintArray` need to be used to get the taint array if the value is cast to string. Also, as always, the variables are stripped first before being putting into the native function.
 
