@@ -405,24 +405,10 @@ function TaintAnalysis(rule)
 
 	function andTaintProp(left, right, result, op)
 	{
-		if (isZeroInOper(left) ||
-			isZeroInOper(right))
-		{
-			return result;
-		}
-		else
-		{
-			var taint_state = rule.arithmetic(
-				rule.compressTaint(shadow(left, rule.noTaint)),
-				rule.compressTaint(shadow(right, rule.noTaint)));
-
-			Log.log(actual(left) + ' ' + op + ' ' +
-				actual(right) + ' = ' + result + '; ');
-			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
-				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
-
-			return getTaintResult(result, taint_state);
-		}
+		return binaryTaintProp(
+			(left, right) =>
+				isZeroInOper(left) || isZeroInOper(right),
+			left, right, result, op);
 	}
 	this.taintProp = {};
 	this.binaryPre = function(iid, op, left, right)
