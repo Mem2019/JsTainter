@@ -47,7 +47,14 @@ function TaintAnalysis(rule)
 		{
 			return rule.noTaint;
 		}
-		return rule.noTaint;//todo???
+		else if (typeof val === 'object')
+		{
+			return {}
+		}
+		else
+		{
+			return rule.noTaint;
+		}//todo???
 	}
 
 	function myAssert(b, position)
@@ -60,6 +67,7 @@ function TaintAnalysis(rule)
 	}
 	function assertTaint(val, taint, position)
 	{
+		taint = actual(taint);
 		var s = shadow(val, rule.noTaint);
 		myAssert(typeof s === typeof taint, position);
 		if (Array.isArray(s))
@@ -70,17 +78,17 @@ function TaintAnalysis(rule)
 				myAssert(s[i] === taint[i], position);
 			}
 		}
+		else if (typeof s == 'object')
+		{
+			//todo:
+			assert(false);
+		}
 		else
 		{
 			myAssert(s === taint, position);
 		}
 	}
 
-	const numAddTypes = new Set(['undefined', 'boolean', 'number']);
-	const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
-	/*undefined and null in array will not be shown
-	when they are in array,
-	and array is converted to string*/
 	const isSolidStrInArr = (val, outArrs) => typeof val != 'undefined'
 		&& val !== null && outArrs.indexOf(val) === -1;
 
@@ -136,13 +144,13 @@ function TaintAnalysis(rule)
 			outArrs.pop();
 			return ret;
 		}
-		return getTaintArrayH(val, []);
+		var mergeVal = mergeTaints(actual(val), shadow(val));
+		var ret = getTaintArrayH(mergeVal, []);
+		stripTaints(mergeVal);
+		return ret;
 	}
 
-	function isUntainted(taint)
-	{
-		return !isTainted(taint);
-	}
+	const isUntainted = (taint) => !isTainted(taint);
 
 	function stringConcatProp(left, right, result)
 	{
@@ -154,14 +162,16 @@ function TaintAnalysis(rule)
 			return new AnnotatedValue(result, newTaint);
 	}
 
+	const numAddTypes = new Set(['undefined', 'boolean', 'number']);
+	const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
+
 	function addTaintProp(left, right, result, op)
 	{
 		if (isNumAddOperands(actual(left)) &&
 			isNumAddOperands(actual(right)))
 		{//numeric add
 			var taint_state = rule.arithmetic(
-				shadow(left, rule.noTaint),
-				shadow(right, rule.noTaint), op);
+				shadow(left), shadow(right), op);
 
 			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
@@ -207,7 +217,7 @@ function TaintAnalysis(rule)
 		var t = typeof val;
 		var b = (t === 'string') && alwaysGiveNaNStr(val, s);
 		return (t === 'object' && val !== null &&
-			alwaysGiveNaNStr(''+val, rule.toStringTaint(val, s), rule)) ||
+			alwaysGiveNaNStr(String(val), getTaintArray(rawVal), rule)) ||
 			t === 'undefined' || b || (t === 'number' && isNaN(val) && isUntainted(s));
 	}
 //string that will always produce NaN
@@ -221,18 +231,16 @@ function TaintAnalysis(rule)
 		else
 		{
 			var taint_state = rule.arithmetic(
-				rule.compressTaint(shadow(left, rule.noTaint)),
-				rule.compressTaint(shadow(right, rule.noTaint)));
+				rule.compressTaint(shadow(left)),
+				rule.compressTaint(shadow(right)));
 
+			//logger.binary(actual(left), shadow(left), actual());
 			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
 			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
-			if (taint_state !== rule.noTaint)
-				return new AnnotatedValue(result, taint_state);
-			else
-				return result;
+			return getTaintResult(result, taint_state);
 		}
 	}
 
@@ -297,9 +305,8 @@ function TaintAnalysis(rule)
 	{
 		var aval = actual(val);
 
-		if (typeof aval == 'object')
+		if (typeof aval == 'object' && aval === val)
 		{
-			assert(aval === val);
 			outArrs.push(aval);
 			var taints = {};
 			for (var k in aval)
@@ -307,7 +314,7 @@ function TaintAnalysis(rule)
 				if (outArrs.indexOf(val[k]) === -1)
 				{
 					var stripped = stripTaintsH(val[k], outArrs);
-					if (stripped.taints !== rule.noTaint)
+					if (isTainted(stripped.taints))
 						taints[k] = stripped.taints;
 					val[k] = stripped.values;
 				}
@@ -337,6 +344,15 @@ function TaintAnalysis(rule)
 			}
 			return false;
 		}
+		else if (typeof taint === 'object')
+		{
+			for (var k in taint)
+			{
+				if (taint[k] !== rule.noTaint)
+					return true;
+			}
+			return false;
+		}
 		else
 		{
 			return taint !== rule.noTaint;
@@ -351,19 +367,22 @@ function TaintAnalysis(rule)
 			return new AnnotatedValue(result, taint);
 	}
 
-	function mergeTaintsH(val, taints)
+	function mergeTaintsH(val, taints, outTaints)
 	{//pre: val and taints come from stripTaints function
+		outTaints.push(taints);
 		for (var k in taints)
 		{
 			if (typeof taints[k] == 'object' && !Array.isArray(taints[k]))
-			{
-				val[k] = mergeTaintsH(val[k], taints[k]);
+			{//non-basic type taint
+				if (outTaints.indexOf(taints[k]) === -1)
+					val[k] = mergeTaintsH(val[k], taints[k], outTaints);
 			}
 			else if (isTainted(taints[k]))
 			{
 				val[k] = new AnnotatedValue(val[k], taints[k]);
 			}
 		}
+		outTaints.pop();
 		return val;
 	}
 
@@ -371,7 +390,7 @@ function TaintAnalysis(rule)
 	{
 		if (typeof taints == 'object' && !Array.isArray(taints))
 		{
-			return mergeTaintsH(val, taints)
+			return mergeTaintsH(val, taints, []);
 		}
 		else if (isTainted(taints))
 		{
@@ -419,143 +438,97 @@ function TaintAnalysis(rule)
 	{
 		binaryRec(left, right, this.taintProp, sandbox, iid);
 		var ret;
-		var strippedLeft = stripTaints(left);
-		var strippedRight = stripTaints(right);
 
-		var aleft = strippedLeft.values;
-		var aright = strippedRight.values;
+		var aleft = actual(left);
+		var aright = actual(right);
 		switch (op)
 		{
 		case "+":
 			result = aleft + aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: addTaintProp(left, right, result, rule, op)};
 			break;
 		case "-":
 			result = aleft - aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "*":
 			result = aleft * aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "/":
 			result = aleft / aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "%":
 			result = aleft % aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: arithTaintProp(left, right, result, rule, op)};
 			break;
 		case "<<":
 			result = aleft << aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>":
 			result = aleft >> aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case ">>>":
 			result = aleft >>> aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: shiftTaintProp(left, right, result, rule, op)};
 			break;
 		case "<":
 			result = aleft < aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">":
 			result = aleft > aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "<=":
 			result = aleft <= aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case ">=":
 			result = aleft >= aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "==":
 			result = aleft == aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!=":
 			result = aleft != aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "===":
 			result = aleft === aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "!==":
 			result = aleft !== aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "&":
 			result = aleft & aright;//todo: imprive accracy
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: andTaintProp(left, right, result, rule, op)};
 			break;
 		case "|":
 			result = aleft | aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "^":
 			result = aleft ^ aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: cmpTaintProp(left, right, result, rule, op)};
 			break;
 		case "delete":
 			result = delete aleft[aright];
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		case "instanceof":
 			result = aleft instanceof aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		case "in":
 			result = aleft in aright;
-			left = mergeTaints(aleft, strippedLeft.taints);
-			right = mergeTaints(aright, strippedRight.taints);
 			ret = {result: result};
 			break;
 		default:
@@ -591,6 +564,11 @@ function TaintAnalysis(rule)
 				return {result: new AnnotatedValue(true, rule.fullTaint)};
 			}
 		}
+		if (typeof val == 'object' && val !== null)
+		{
+			var strippedVal = stripTaints(val);
+			return {result: new AnnotatedValue(strippedVal.values, strippedVal.taints)}
+		}
 	};
 	this.endExecution = function()
 	{
@@ -600,6 +578,7 @@ function TaintAnalysis(rule)
 	{
 		return {f:f, base:base, args:args, skip:true}
 	};
+	const actualArgs = (args) => Array.prototype.map.call(args, actual);
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
 		const charAtTaint = (ts, idx) =>
@@ -631,63 +610,49 @@ function TaintAnalysis(rule)
 			{
 			case Function.prototype.apply:
 			{
-				return this.invokeFun(iid, base, args[0], args[1],
+				return this.invokeFun(iid, base, args[0], actual(args[1]),
 					result, isConstructor, isMethod);
 			}
 			case String.prototype.substr:
 			{//todo: what if index and size are tainted?
 				//todo: maybe there is better way
-				strippedBase = stripTaints(base);
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
-				abase = strippedBase.values;
+				aargs = actualArgs(args);
+				abase = actual(base);
 				ret = f.apply(abase, aargs);
-				base = mergeTaints(abase, strippedBase.taints);
 				const sliceTaint = (ts, idx, len) =>
 					strToTaintArr(taintArrToStr(ts).
 					substr(idx, len), ts);
 				sv = sliceTaint(getTaintArray(base), aargs[0], aargs[1]);
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case Number:
 			{
 				if (!alwaysGiveNaN(args[0], rule))
-				{
-					sv = rule.compressTaint(shadow(args[0], rule.noTaint));
+				{//todo: need change
+					sv = rule.compressTaint(shadow(args[0]));
 				}
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
+				aargs = actualArgs(args);
 				ret = f.apply(base, aargs);
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case String.prototype.charAt:
 			{
-				strippedBase = stripTaints(base);
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
-				abase = strippedBase.values;
+				aargs = actualArgs(args);
+				abase = actual(base);
 				ret = f.apply(abase, aargs);
-				base = mergeTaints(abase, strippedBase.taints);
 				sv = charAtTaint(getTaintArray(base), aargs[0]);
 				//todo: what if index is tainted
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case String.prototype.charCodeAt:
 			{
-				strippedBase = stripTaints(base);
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
-				abase = strippedBase.values;
+				aargs = actualArgs(args);
+				abase = actual(base);
 				ret = f.apply(abase, aargs);
-				base = mergeTaints(abase, strippedBase.taints);
 
 				sv = rule.ordTaint(charAtTaint(getTaintArray(base), aargs[0]));
 				//when taint array length == 0, sv == undefined, which gives no taint
 				//todo: what if index is tainted
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case String.fromCharCode:
@@ -697,21 +662,15 @@ function TaintAnalysis(rule)
 					sv = rule.chrTaint(rule.compressTaint(
 						shadow(args[0], rule.noTaint)));
 				}
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
+				aargs = actualArgs(args);
 				ret = f.apply(base, aargs);
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case String.prototype.concat:
 			{
-				strippedBase = stripTaints(base);
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
-				abase = strippedBase.values;
+				aargs = actualArgs(args);
+				abase = actual(base);
 				ret = f.apply(abase, aargs);
-				args = mergeTaints(aargs, strippedArgs.taints);
-				base = mergeTaints(abase, strippedBase.taints);
 				sv = Array.prototype.concat.apply(
 					getTaintArray(base, rule),
 					Array.prototype.map.call(args,(a) => getTaintArray(a, rule)));
@@ -728,8 +687,7 @@ function TaintAnalysis(rule)
 			case escape:
 			{
 				taints = getTaintArray(args[0]);
-				strippedBase = stripTaints(args[0]);
-				abase = strippedBase.values;
+				abase = actual(args[0]);
 				ret = f.apply(base, [abase]);
 				sv = [];
 				var j = 0;
@@ -768,11 +726,9 @@ function TaintAnalysis(rule)
 				abase = actual(base);
 				if (!(abase instanceof Number) && typeof abase !== 'number')
 					throw TypeError("Number.prototype.toString is not generic");
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
+				aargs = actualArgs(args);
 
 				rule.toStringTaint(base, shadow(base), (a) => f.apply(a, aargs));
-				args = mergeTaints(aargs, strippedArgs.taints);
 			}
 			break;
 			case Array.prototype.push:
@@ -782,13 +738,9 @@ function TaintAnalysis(rule)
 			break;
 			default:
 			{
-				strippedBase = stripTaints(base);
-				strippedArgs = stripTaints(args);
-				aargs = strippedArgs.values;
-				abase = strippedBase.values;
+				aargs = actualArgs(args);
+				abase = actual(base);
 				ret = f.apply(abase, aargs);
-				args = mergeTaints(aargs, strippedArgs.taints);
-				base = mergeTaints(abase, strippedBase.taints);
 			}
 			break;
 			}
@@ -812,7 +764,7 @@ function TaintAnalysis(rule)
 				// Give the Temp constructor the Constructor's prototype
 				Temp.prototype = constructor.prototype;
 				// Create a new instance
-				inst = new Temp;
+				inst = new AnnotatedValue(new Temp, {});
 				// Call the original Constructor with the temp
 				// instance as its context (i.e. its 'this' value)
 				ret = constructor.apply(inst, args);
@@ -839,26 +791,29 @@ function TaintAnalysis(rule)
 	this.getField = function (iid, base, offset)
 	{
 		var abase = actual(base);
-		var strippedOff = stripTaints(offset);
+		var aoff = actual(offset);
+		var soff = shadow(offset);
 		var sbase = shadow(base);
-		var ret;
+
+		var ret,sv,f;
 		if (typeof abase == "string"
-			&& Number.isInteger(strippedOff.values)
-			&& strippedOff.values < sbase.length)
+			&& Number.isInteger(aoff)
+			&& aoff < sbase.length)
 		{//is accessing string character
-			var elemT = sbase[strippedOff.values];
-			ret = abase[strippedOff.values];
-			var sv = rule.getStringCharTaint(elemT, strippedOff.taints);
-			mergeTaints(strippedOff.values, strippedOff.taints);
-			return getTaintResult(ret, sv);
+			f = rule.getStringCharTaint;
+		}
+		else if (typeof abase == 'object')
+		{//array & object
+			f = rule.getFieldTaint;
 		}
 		else
 		{
-			ret = abase[strippedOff.values];
-			offset = mergeTaints(strippedOff.values, strippedOff.taints);
-			ret = rule.getFieldTaint(ret, shadow(offset));
-			return {result: ret};
+			return {result:abase[aoff]};
 		}
+		sv = sbase[aoff];
+		ret = abase[aoff];
+		sv = f(sv, soff);
+		return {result:getTaintResult(ret, sv)};
 	};
 	this.putFieldPre = function (iid, base, offset, val)
 	{
@@ -867,9 +822,12 @@ function TaintAnalysis(rule)
 	this.putField = function (iid, base, offset, val)
 	{
 		var abase = actual(base);
-		var strippedOff = stripTaints(offset);
-		abase[strippedOff.values] = val;//todo, when offset tainted?
-		mergeTaints(strippedOff.values, strippedOff.taints);
+		var sbase = shadow(base);
+		var aoff = actual(offset);
+
+		abase[aoff] = actual(val);//todo, when offset tainted?
+		sbase[aoff] = shadow(val);
+
 		return {result:val};
 	};
 }
