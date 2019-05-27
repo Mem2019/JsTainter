@@ -109,7 +109,7 @@ function TaintAnalysis(rule)
 				if (Array.isArray(aval))
 					return getTaintArrayForArray(aval, outArrs);
 				else //this includes the case where aval === null
-					return Utils.fillArray(rule.noTaint, ('' + aval).length)
+					return Utils.fillArray(rule.noTaint, (String(aval)).length)
 			}
 			case 'number':
 			case 'boolean':
@@ -361,7 +361,7 @@ function TaintAnalysis(rule)
 
 	function getTaintResult(result, taint)
 	{
-		if (taint === rule.noTaint || typeof taint == 'undefined')
+		if (isUntainted(taint) || typeof taint == 'undefined')
 			return result;
 		else
 			return new AnnotatedValue(result, taint);
@@ -731,6 +731,20 @@ function TaintAnalysis(rule)
 				rule.toStringTaint(base, shadow(base), (a) => f.apply(a, aargs));
 			}
 			break;
+			case String.prototype.indexOf:
+			{
+				aargs = actualArgs(args);
+				var baseTaintArr = getTaintArray(base);
+				var argTaintArr = getTaintArray(args[0]);
+				ret = f.apply(actual(base), aargs);
+				var a1 = actual(args[1]);
+				var startIdx = a1 < 0 || typeof a1 == 'undefined' ? 0 : a1;
+
+				sv = rule.strIdxOfTaint(baseTaintArr, argTaintArr,
+					startIdx, ret + argTaintArr.length);
+
+			}
+			break;
 			case Array.prototype.push:
 			{
 				ret = f.apply(base, args);
@@ -747,11 +761,7 @@ function TaintAnalysis(rule)
 			//convert arguments to actual value
 
 			//todo: process other type of native function
-			Log.log("sv " + JSON.stringify(sv));
-			if (typeof sv !== 'undefined' && isTainted(sv))
-				return {result:new AnnotatedValue(ret, sv)};
-			else
-				return {result:ret};
+			return {result:getTaintResult(ret, sv)};
 		}
 		else
 		{

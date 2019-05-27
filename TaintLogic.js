@@ -51,6 +51,19 @@ TaintUnit.prototype.getStringCharTaint = function (baseT, offsetT)
 {
 	return [baseT];
 };
+TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
+{
+	if (argTaintArr.reduce((a, b) => a || b))
+		return true;
+	for (var i = startIdx; i <= end; i++)
+	{
+		if (baseTaintArr[i])
+		{
+			return true;
+		}
+	}
+	return false;
+};
 // TaintUnit.prototype.compressTaint = function(s)
 // {
 // 	if (Array.isArray(s))

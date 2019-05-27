@@ -15,6 +15,12 @@ var obj;
 //function antiInstrumentation(){var a = 3;}
 //assert(String(antiInstrumentation) === "function antiInstrumentation(){var a = 3;}");
 
+taintedStr = "ta1nt3d_stringAAAA";
+s = "BBBB" + taintedStr;
+assertTaint(s.indexOf('B'), false);
+assertTaint(s.indexOf('A'), true);
+assertTaint(s.indexOf('BA'), true);
+
 //test constructor
 function Test(p)
 {
