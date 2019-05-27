@@ -19,6 +19,8 @@ var config = new (function ()
 {
 function TaintAnalysis(rule)
 {
+	this.readRec = {};
+	this.writeRec = {};
 	function AnnotatedValue(val, shadow)
 	{
 		this.val = val;
@@ -337,7 +339,7 @@ function TaintAnalysis(rule)
 		return stripTaintsH(val, []);
 	}
 
-	function isTainted(taint)
+	function isTaintedH(taint, outArr)
 	{
 		if (Array.isArray(taint))
 		{
@@ -350,17 +352,26 @@ function TaintAnalysis(rule)
 		}
 		else if (typeof taint === 'object')
 		{
+			outArr.push(taint);
 			for (var k in taint)
 			{
-				if (taint[k] !== rule.noTaint)
-					return true;
+				if (outArr.indexOf(taint[k]) === -1)
+				{
+					if (isTaintedH(taint[k], outArr)) // !== rule.noTaint)
+						return true;
+				}
 			}
+			outArr.pop();
 			return false;
 		}
 		else
 		{
 			return taint !== rule.noTaint;
 		}
+	}
+	function isTainted(taint)
+	{
+		return isTaintedH(taint, []);
 	}
 
 	function getTaintResult(result, taint)
@@ -433,7 +444,6 @@ function TaintAnalysis(rule)
 				isZeroInOper(left) || isZeroInOper(right),
 			left, right, result, op, pos);
 	}
-	this.taintProp = {};
 	this.binaryPre = function(iid, op, left, right)
 	{
 		return {op:op,left:left,right:right,skip:true}
@@ -576,7 +586,8 @@ function TaintAnalysis(rule)
 	};
 	this.endExecution = function()
 	{
-		Log.log(JSON.stringify(rule.recorder) + '\n')
+		Log.log(JSON.stringify(this.readRec));
+		Log.log(JSON.stringify(this.writeRec));
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -854,7 +865,18 @@ function TaintAnalysis(rule)
 			ret[k] = getTaintResult(aval[k], sval[k]);
 		}
 		return {result:ret}
+	};
+	this.read = function (iid, name, val)
+	{
+		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
+			this.readRec[getPosition(iid)] = 1;
+	};
+	this.write = function (iid, name, val)
+	{
+		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
+			this.writeRec[getPosition(iid)] = 2;
 	}
+
 }
 sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(config));
 })(J$);

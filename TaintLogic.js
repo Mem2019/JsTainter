@@ -6,16 +6,12 @@ const Log = new (require("./Log").Log)();
 function TaintUnit(config)
 {
 	this.config = config;
-	this.recorder = {};
 }
 TaintUnit.prototype.noTaint = false;
 TaintUnit.prototype.fullTaint = true;
 TaintUnit.prototype.arithmetic = function(left, right, op, pos)
 {
-	var ret = left || right;
-	if (ret)
-		this.recorder[pos] = 1;
-	return ret;
+	return left || right;
 };
 TaintUnit.prototype.toStringTaint = function(a,t,f)
 {
