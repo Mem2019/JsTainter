@@ -49,7 +49,7 @@ function TaintAnalysis(rule)
 		}
 		else if (typeof val === 'object')
 		{
-			return {}
+			return {};
 		}
 		else
 		{
@@ -165,13 +165,13 @@ function TaintAnalysis(rule)
 	const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 	const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
 
-	function addTaintProp(left, right, result, op)
+	function addTaintProp(left, right, result, op, pos)
 	{
 		if (isNumAddOperands(actual(left)) &&
 			isNumAddOperands(actual(right)))
 		{//numeric add
 			var taint_state = rule.arithmetic(
-				shadow(left), shadow(right), op);
+				shadow(left), shadow(right), op, pos);
 
 			Log.log(actual(left) + ' ' + op + ' ' +
 				actual(right) + ' = ' + result + '; ');
@@ -222,7 +222,7 @@ function TaintAnalysis(rule)
 	}
 //string that will always produce NaN
 
-	function binaryTaintProp(callback, left, right, result, op)
+	function binaryTaintProp(callback, left, right, result, op, pos)
 	{
 		if (callback(left, right))
 		{
@@ -232,7 +232,8 @@ function TaintAnalysis(rule)
 		{
 			var taint_state = rule.arithmetic(
 				rule.compressTaint(shadow(left)),
-				rule.compressTaint(shadow(right)));
+				rule.compressTaint(shadow(right)),
+				op, pos);
 
 			//logger.binary(actual(left), shadow(left), actual());
 			Log.log(actual(left) + ' ' + op + ' ' +
@@ -244,11 +245,11 @@ function TaintAnalysis(rule)
 		}
 	}
 
-	function arithTaintProp(left, right, result, op)
+	function arithTaintProp(left, right, result, op, pos)
 	{
 		return binaryTaintProp((left, right) =>
 			alwaysGiveNaN(left) || alwaysGiveNaN(right),
-			left, right, result, op);
+			left, right, result, op, pos);
 	}
 
 	function isTaintAsNum(val)
@@ -265,29 +266,32 @@ function TaintAnalysis(rule)
 
 
 
-	function shiftTaintProp(left, right, result, op)
+	function shiftTaintProp(left, right, result, op, pos)
 	{
 		//if LHS is always NaN, result is always 0
-		return binaryTaintProp((left) => isZeroInOper(left), left, right, result, op);
+		return binaryTaintProp((left) => isZeroInOper(left), left, right, result, op, pos);
 	}
 
-	function cmpTaintProp(left, right, result, op)
+	function cmpTaintProp(left, right, result, op, pos)
 	{//todo, consider more cases to improve accuracy
-		return binaryTaintProp(()=>false, left, right, result, op);
+		return binaryTaintProp(()=>false, left, right, result, op, pos);
 	}
 
 
-	function binaryRec(left, right, taintProp, sandbox, iid)
-	{//todo
-		/*if (isTainted(shadow(left, noTaint)) || isTainted(shadow(right, noTaint)))
-		{
-			taintProp[(sandbox.iidToLocation(
-				sandbox.getGlobalIID(iid)))] = 1;
-		}*/
-	}
-	function funcInvokeRec(func, base, args)
+	function getPosition(iid)
 	{
-
+		var ret = sandbox.iidToLocation(
+			sandbox.getGlobalIID(iid));
+		var idx;
+		while (true)
+		{
+			idx = ret.indexOf('/');
+			if (idx < 0)
+				break;
+			ret = ret.substr(idx + 1);
+		}
+		if (ret[ret.length - 1] === ')')
+			return ret.substr(0, ret.length - 1);
 	}
 
 	function taintAllH(val, outArrs)
@@ -422,12 +426,12 @@ function TaintAnalysis(rule)
 		return retSlice;
 	}
 
-	function andTaintProp(left, right, result, op)
+	function andTaintProp(left, right, result, op, pos)
 	{
 		return binaryTaintProp(
 			(left, right) =>
 				isZeroInOper(left) || isZeroInOper(right),
-			left, right, result, op);
+			left, right, result, op, pos);
 	}
 	this.taintProp = {};
 	this.binaryPre = function(iid, op, left, right)
@@ -436,7 +440,7 @@ function TaintAnalysis(rule)
 	};
 	this.binary = function(iid, op, left, right, result)
 	{
-		binaryRec(left, right, this.taintProp, sandbox, iid);
+		var pos = getPosition(iid);
 		var ret;
 
 		var aleft = actual(left);
@@ -445,79 +449,79 @@ function TaintAnalysis(rule)
 		{
 		case "+":
 			result = aleft + aright;
-			ret = {result: addTaintProp(left, right, result, rule, op)};
+			ret = {result: addTaintProp(left, right, result, op, pos)};
 			break;
 		case "-":
 			result = aleft - aright;
-			ret = {result: arithTaintProp(left, right, result, rule, op)};
+			ret = {result: arithTaintProp(left, right, result, op, pos)};
 			break;
 		case "*":
 			result = aleft * aright;
-			ret = {result: arithTaintProp(left, right, result, rule, op)};
+			ret = {result: arithTaintProp(left, right, result, op, pos)};
 			break;
 		case "/":
 			result = aleft / aright;
-			ret = {result: arithTaintProp(left, right, result, rule, op)};
+			ret = {result: arithTaintProp(left, right, result, op, pos)};
 			break;
 		case "%":
 			result = aleft % aright;
-			ret = {result: arithTaintProp(left, right, result, rule, op)};
+			ret = {result: arithTaintProp(left, right, result, op, pos)};
 			break;
 		case "<<":
 			result = aleft << aright;
-			ret = {result: shiftTaintProp(left, right, result, rule, op)};
+			ret = {result: shiftTaintProp(left, right, result, op, pos)};
 			break;
 		case ">>":
 			result = aleft >> aright;
-			ret = {result: shiftTaintProp(left, right, result, rule, op)};
+			ret = {result: shiftTaintProp(left, right, result, op, pos)};
 			break;
 		case ">>>":
 			result = aleft >>> aright;
-			ret = {result: shiftTaintProp(left, right, result, rule, op)};
+			ret = {result: shiftTaintProp(left, right, result, op, pos)};
 			break;
 		case "<":
 			result = aleft < aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case ">":
 			result = aleft > aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "<=":
 			result = aleft <= aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case ">=":
 			result = aleft >= aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "==":
 			result = aleft == aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "!=":
 			result = aleft != aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "===":
 			result = aleft === aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "!==":
 			result = aleft !== aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "&":
 			result = aleft & aright;//todo: imprive accracy
-			ret = {result: andTaintProp(left, right, result, rule, op)};
+			ret = {result: andTaintProp(left, right, result, op, pos)};
 			break;
 		case "|":
 			result = aleft | aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "^":
 			result = aleft ^ aright;
-			ret = {result: cmpTaintProp(left, right, result, rule, op)};
+			ret = {result: cmpTaintProp(left, right, result, op, pos)};
 			break;
 		case "delete":
 			result = delete aleft[aright];
@@ -572,7 +576,7 @@ function TaintAnalysis(rule)
 	};
 	this.endExecution = function()
 	{
-		Log.log(JSON.stringify(this.taintProp) + '\n')
+		Log.log(JSON.stringify(rule.recorder) + '\n')
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -741,7 +745,7 @@ function TaintAnalysis(rule)
 				var startIdx = a1 < 0 || typeof a1 == 'undefined' ? 0 : a1;
 
 				sv = rule.strIdxOfTaint(baseTaintArr, argTaintArr,
-					startIdx, ret + argTaintArr.length);
+					startIdx, ret < 0 ? 0 :ret + argTaintArr.length);
 
 			}
 			break;

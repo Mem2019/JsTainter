@@ -6,63 +6,87 @@ const Log = new (require("./Log").Log)();
 function TaintUnit(config)
 {
 	this.config = config;
+	this.recorder = {};
 }
 TaintUnit.prototype.noTaint = false;
 TaintUnit.prototype.fullTaint = true;
-TaintUnit.prototype.arithmetic = function(left, right, op)
+TaintUnit.prototype.arithmetic = function(left, right, op, pos)
 {
-	return left || right;
+	var ret = left || right;
+	if (ret)
+		this.recorder[pos] = 1;
+	return ret;
 };
 TaintUnit.prototype.toStringTaint = function(a,t,f)
 {
+	var ret;
 	if (f !== 'undefined')
-		return Utils.fillArray(t, (String(a)).length);
+		ret = Utils.fillArray(t, (String(a)).length);
 	else
-		return Utils.fillArray(t, f(a).length);
+		ret = Utils.fillArray(t, f(a).length);
+	return ret;
 };
 TaintUnit.prototype.compressTaint = function (shadow)
 {//todo, make it more generic
+	var ret;
 	if (typeof shadow == 'boolean')
 	{
-		return shadow;
+		ret = shadow;
 	}
 	else if (Array.isArray(shadow))
 	{
-		return shadow.reduce((a, b) => a || b);
+		ret = shadow.reduce((a, b) => a || b);
 	}
+	return ret;
 };
 TaintUnit.prototype.ordTaint = function (t)
 {
-	return t[0];
+	var ret;
+	ret = t[0];
+	return ret;
 };
 TaintUnit.prototype.chrTaint = function (t)
 {
-	return [t]
+	var ret;
+	ret = [t];
+	return ret;
 };
 TaintUnit.prototype.escapeTaint = function (t ,type)
 {
-	return t;
+	var ret;
+	ret = t;
+	return ret;
 };
 TaintUnit.prototype.getFieldTaint = function (elemT, idxT)
 {//todo: maybe need to be changed for more option
-	return elemT;
+	var ret;
+	ret = elemT;
+	return ret;
 };
 TaintUnit.prototype.getStringCharTaint = function (baseT, offsetT)
 {
-	return [baseT];
+	var ret;
+	ret = [baseT];
+	return ret;
 };
 TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
 {
+	var ret;
 	if (argTaintArr.reduce((a, b) => a || b))
-		return true;
+	{
+		ret = true;
+		return ret;
+	}
 	for (var i = startIdx; i <= end; i++)
 	{
 		if (baseTaintArr[i])
 		{
-			return true;
+			ret = true;
+			return ret;
 		}
 	}
-	return false;
+	ret = false;
+	return ret;
 };
 // TaintUnit.prototype.compressTaint = function(s)
 // {

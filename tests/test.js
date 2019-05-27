@@ -18,6 +18,8 @@ var obj;
 taintedStr = "ta1nt3d_stringAAAA";
 s = "BBBB" + taintedStr;
 assertTaint(s.indexOf('B'), false);
+assertTaint(s.indexOf('AB'), false);
+assertTaint(s.indexOf('CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'), false);
 assertTaint(s.indexOf('A'), true);
 assertTaint(s.indexOf('BA'), true);
 
@@ -30,7 +32,7 @@ function Test(p)
 obj = new Test("ta1nt3d_intNaN");
 assertTaint(obj.test1, true);
 assert(isNaN(obj.test1));
-with (obj) // todo
+with (obj)
 {
 	assertTaint(test2, true);
 	assert(isNaN(test2));
