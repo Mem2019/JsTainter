@@ -24,11 +24,11 @@ function Test(p)
 obj = new Test("ta1nt3d_intNaN");
 assertTaint(obj.test1, true);
 assert(isNaN(obj.test1));
-// with (obj) // todo
-// {
-// 	assertTaint(test2, true);
-// 	assert(isNaN(test2));
-// }
+with (obj) // todo
+{
+	assertTaint(test2, true);
+	assert(isNaN(test2));
+}
 assert(obj instanceof Test);
 
 

@@ -830,6 +830,17 @@ function TaintAnalysis(rule)
 
 		return {result:val};
 	};
+	this._with = function (iid, val)
+	{
+		var aval = actual(val);
+		var sval = shadow(val);
+		var ret = {};
+		for (var k in aval)
+		{
+			ret[k] = getTaintResult(aval[k], sval[k]);
+		}
+		return {result:ret}
+	}
 }
 sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(config));
 })(J$);
