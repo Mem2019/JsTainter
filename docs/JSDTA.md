@@ -40,20 +40,20 @@ Here is the full list of the JavaScript operations that can be instrumented, whi
 
 `Shadow Value` is a concept formulated in [Jalangi paper](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.455.9073&rep=rep1&type=pdf). The key point is that there could be another shadow value associated with a variable. In the paper, `AnnotatedValue` class is used to denote the variable that has any shadow value along with it. The `value` field of this class is the original value of this variable, while `shadow` field is the shadow value associated with this variable. For example, if an integer variable `1337` has shadow value `true`, the variable will be an `AnnotatedValue` object with field `value` being `1337` and field `shadow` being `true`, denoted as `AnnotatedValue(1337, true)` (I will use this notation in the following report). This shadow value concept is important because `JsTainter` will use shadow value to record the taint state information about a variable, which is necessary in dynamic taint analysis.
 
-However, I found that mechanism of shadow value of `Jalangi2`, works differently from the one mentioned in this [paper](https://people.eecs.berkeley.edu/~ksen/papers/jalangi.pdf). The reason might be that the version is different: the paper covers `Jalangi1` while I am using `Jalangi2`. Of course, `JsTainter` can use `Jalangi1` instead of `Jalangi2`, but `Jalangi1` has not been maintainted for many years, so using `Jalangi1` may have more risk of encountering bugs in the framework.
+However, I found that mechanism of shadow value of `Jalangi2`, works differently from the one mentioned in this [paper](https://people.eecs.berkeley.edu/~ksen/papers/jalangi.pdf). The reason might be that the version is different: the paper covers `Jalangi1` while I am using `Jalangi2`. Of course, `JsTainter` can use `Jalangi1` instead of `Jalangi2`, but `Jalangi1` has not been maintained for many years, so using `Jalangi1` may have more risk of encountering bugs in the framework.
 
-In the paper (`Jalangi1`), it is suggested to use a `AnnotatedValue` to replace some variables, just as I discussed above, and as long as the variable is used for some operation, `actual(value)` is used to convert it to actual value for operation. For example, `actual(AnnotatedValue(1337, true)) === 1337`.  Then when our analysis callback function `analysis.binary` is called, `value` is passed as the arguments instead of `actual(value)`. The logic is shown as below, according to the seudo-codes in the paper.
+In the paper (`Jalangi1`), it is suggested to use a `AnnotatedValue` to replace some variables, just as I discussed above, and as long as the variable is used for some operation, `actual(value)` is used to convert it to actual value for operation. For example, `actual(AnnotatedValue(1337, true)) === 1337`.  Then when our analysis callback function `analysis.binary` is called, `value` is passed as the arguments instead of `actual(value)`. The logic is shown as below, according to the pseudo-codes in the paper.
 
 ```javascript
-//definition of AnotatedValue
-function AnotatedValue(val, shadow)
+//definition of AnnotatedValue
+function AnnotatedValue(val, shadow)
 {
 	this.val = val;
 	this.shadow = shadow;
 }
 function actual(val)
 {
-	return val instanceof AnotatedValue ? val.val : val;
+	return val instanceof AnnotatedValue ? val.val : val;
 }
 //when executing instrumented code of binary operator
 var result = actual(left) op actual(right) //call `actual` before used as operands 
@@ -173,13 +173,15 @@ The `taint information variable` discussed in last subsection can only be used t
 
 ### String
 
-The reason why it is not good to mark the whole string as tainted or not is that part of the string can be affected by user while part of the string cannot. For example, user can control the argument field of an URL, which should be marked as tainted, but cannot control the demain field, which should not be marked as tainted. Therefore, shadow value of `String` is an array of `taint information variable` whose length is same as the length of the string. For example, `AnnotatedValue("AABB", [true,true,false,false])` denotes that `"AA"` part is tainted but `"BB"` part is not tainted.
+The reason why it is not good to mark the whole string as tainted or not is that part of the string can be affected by user while part of the string cannot. For example, user can control the argument field of an URL, which should be marked as tainted, but cannot control the domain field, which should not be marked as tainted. Therefore, shadow value of `String` is an array of `taint information variable` whose length is same as the length of the string. For example, `AnnotatedValue("AABB", [true,true,false,false])` denotes that `"AA"` part is tainted but `"BB"` part is not tainted.
 
 ### Object and Array
 
-Obviously it is not accurate to mark the whole object or array as tainted or not, because content of object or array can always be modified. For example, if `obj` is an `Object`, after executing `obj["a"] = "b"`, it is hard to track the information that `obj.a` is actually tainted using ont `taint information variable` only. 
+Obviously it is not accurate to mark the whole object or array as tainted or not, because values stored in the object or array are independent and they can always be modified. For example, if `obj` is an `Object`, after executing `obj["a"] = "b"` and `obj["t"] = tainted_string`, using one `taint information variable` only, we cannot track taint states of these 2 fields independently. 
 
-Therefore, the better design choice is to taint the values inside `Object` or `Array`, rather than taint the object or array itself. For example, if we have a array of integers and all of them are tainted, we do not taint the array to a `AnnotatedValue` with actual value as an array, but taint each individual elements such that the array becomes an array of `AnnotatedValue` with actual value as an integer (`[AnnotatedValue(1,true), AnnotatedValue(2,true)]` instead of `AnnotatedValue([1,2], true)`). 
+Therefore, the better design choice is to taint the values inside `Object` or `Array`, rather than taint the object or array itself as a whole. For example, if we have a array of integers and all of them are tainted, we do not taint the array to a `AnnotatedValue` with actual value as an array, but taint each individual elements such that the array becomes an array of `AnnotatedValue` with actual value as an integer (`[AnnotatedValue(1,true), AnnotatedValue(2,true)]` instead of `AnnotatedValue([1,2], true)`). 
+
+Originally I employed such design. However, later on, I found that this design is still naive, so I then reconstructed my code. This problem is when the array is used in some operation, sometimes the taint information must be stripped before using the array. I will cover the detail about it later in *taint stripping and merging* subsection. Therefore, an alternative design is to still wrap the object or array with `AnnotatedValue`, but use an `Object` to describe taint state instead of a single `taint information variable`. Using the example above, in current design, we will have an `AnnotatedValue([1,2], {'0':true, '1':true})`. I will also discuss the details later.
 
 Nonetheless, we cannot make key tainted, since in JavaScript only `String` or `Number` type is allowed to be used as key. Even if we assign value using `AnnotatedValue` as the key, it will still be casted to `String` before being used as key. However, the drawback is that sometimes key should have been tainted. For example, if argument passed to `JSON.parse` are a string that is totally tainted (e.i. every character is tainted including keys), the key should be tainted intuitively, but that's not the case in current design. Fortunately, usually websites will not use key to propagate information, so this drawback does not hurt so much.
 
@@ -199,7 +201,9 @@ JavaScript is a dynamic and weakly-typed language. Due to such feature, the tain
 
 ## Taint Stripping and Merging
 
-`Taint stripping` is the operation that removes all taint information *recursively* from a given JavaScript variable. I will explain what "recursively" means here later. When variable is used in JavaScript operations, the taint information must be stripped first to ensure the correctness of the result of JavaScript operations. These operations include JavaScript native function call and basic operator operation. The correctness of the operation can be affected by unstripped variable as shown below.
+As I mentioned when discussing shadow value of object and array, there are 2 possible design choices: for example, we can have either `[AnnotatedValue(1,true), AnnotatedValue(2,true)]` or `AnnotatedValue([1,2], {'0':true, '1':true})`, where the second one is more favorable. However, even if second form is a more favorable design, sometimes the first form is easier to process. Therefore, we need some functions that enable us to switch between these 2 forms. To make it simple, I will call the first form as `merged form` and the second form as `stripped form` in the following section.
+
+`Taint stripping` is the operation that *recursively* transforms the `merged from` to `stripped form`. I will explain what "recursively" means here later. If the merged form design choice is used for object and array variables (which is my original design), and when variable is used in JavaScript operations, the taint information must be stripped first to ensure the correctness of the result of JavaScript operations. These operations include JavaScript native function call and basic operator operation. The correctness of the operation can be affected by `merged form` as shown below.
 
 ```javascript
 var arr;
@@ -207,7 +211,7 @@ var arr;
 arr += "C";
 ```
 
-If the tainted information is not tripped from the `arr` variable, `"[object Object]C"` will be the final result of `arr`, which is not correct, because dynamic taint analysis should not change the behavior of the program being analyzed, and the final result of `arr` should be `"ABC"` instead, as shown below.
+If `arr` variable is in merged form, `"[object Object]C"` will be the final result of `arr`, which is not correct, because dynamic taint analysis should not change the behavior of the program being analyzed, and the final result of `arr` should be `"ABC"` instead, as shown below.
 
 ```javascript
 // new AnnotatedValue("AB", [true,false]) is essentially ["AB"]
@@ -219,7 +223,7 @@ undefined
 'ABC'
 ```
 
-Therefore, to prevent such case from occuring, we need to *strip the taint information* to recover the original variable before putting them into JavaScript built-in operation. `JsTainter` has implemented a function called `stripTaints` to separate taint information and real value. The return value is an object with `taints` field being taint information and `values` field being real values.
+Therefore, to prevent such case from occurring, we need to *strip the taint information* (e.i. transform the variable to `stripped form`) to recover the original variable before putting them into JavaScript built-in operation. `JsTainter` has implemented a function called `stripTaints` to separate taint information and real value from a `merged form` variable. The return value is an object with `taints` field being `taint information` and `values` field being `real values`.
 
 ```javascript
 //The way `stripTaints` function should be used
@@ -227,9 +231,11 @@ var v;
 var sv = stripTaints(v);
 sv.taints; //access taint part
 sv.values; //access value part
+var stripped_form = new AnnotatedValue(sv.values, sv.taints)
+//convert it into `stripped form`
 ```
 
-Here are some examples illustrating the effect of calling `stripTaints`. `values` field is the recovered original variable, and `taints` field is all tiant information. 
+Here are some examples illustrating the effect of calling `stripTaints`. 
 
 ```javascript
 //Example 1:// todo: make it a table
@@ -259,15 +265,23 @@ When we strip the taint from a variable, it separates the real values and taint 
 
 Here is a few points to note: 
 
-1. The original variable is an object, it is not cloned, and it will share the same reference as the `values` part. So, if the developper use the original object after `stripTaints` is called to it, the stripped object instead of the unstripped object will be obtained. 
+1. The original variable is an object, it is not cloned, and it will share the same reference as the `values` part. So, if the developer use the original object after `stripTaints` is called to it, the stripped object instead of the unstripped object will be obtained. 
 2. Even if original structure is an `Array`, when it is separated into the taint part, it becomes an `Object` with numeric string as the key. The reason of this design is that if we keep it as `Array`, it will be confused with taint information of `String`, which is also an `Array`. The JavaScript feature that make this design proper is that `a[123]` and `a["123"]` will always be mapped to the same value, no matter `a` is a `Object` or an `Array`, so a number string as key will not cause any problem when we use key of different type to access the object. 
-3. Recursion should not be applied to circular references, since that will cause infinite recursion. Instead, a stack that stores all current outter object references should be used to check the existence of circular reference, and if any, skip that variable without applying any recursion call to it.
+3. Recursion should not be applied to circular references, since that will cause infinite recursion. Instead, a stack that stores all current outer object references should be used to check the existence of circular reference, and if any, skip that variable without applying any recursion call to it.
+4. As optimization, if a specific field of object or array is not tainted, corresponding field in taint information object will be simply `undefined` instead of `false`. In the third example, `u2` and `u` fields are both untainted, and in the taint object these 2 keys are simply undefined instead of having a `u2:false,u:false`.
 
-Paired with `stripTaints` function, we also need to implement a `mergeTaints` that recovers the taint information separated by `stripTaints`. Here is the way to use this function.
+Paired with `stripTaints` function, we also need to implement a `mergeTaints` function that transforms the `stripped form` to `merged form`. Here is the way to use this function.
 
 ```javascript
-v = mergeTaints(sv.taints, sv.values)
+var stripped_form; // a stripped-form AnnotatedValue instance
+v = mergeTaints(actual(stripped_form), shadow(stripped_form))
 ```
+
+Similar to `stripTaints` function, there are also some points:
+
+1. The result object being returned is not cloned from the input, but share the same reference as the first argument passed to `mergeTaints`.
+2. Since for the untainted fields, corresponding field in shadow value (e.i. taint information of the object) is undefined, it is more efficient to traverse taint information object instead of real value object, and assign a newly created `AnnotatedValue` with shadow value fetched from taint information object to the corresponding field of real value object, if that field is tainted. 
+3. Like `stripTaints`, circular reference is also checked and being prevented from infinite recursion.
 
 ### Implementation
 
@@ -277,11 +291,11 @@ The implementation for `stripTaints` is clear and simple, we check the variable 
 
 ## Binary Operators
 
-In this subsection I will discuss taint propagation rule design for binary operator in this project. Because there is no operator overloads in JavaScript, the behavoirs of binary operators are always certain.
+In this subsection I will discuss taint propagation rule design for binary operator in this project. Because there is no operator overloads in JavaScript, the behaviors of binary operators are always certain.
 
 ### Add
 
-In JavaScript, there are only 2 functionalities for `+` operator: *numeric plus* and *string concatination*. However, according to different operand types, the behavior of `+` varies. It's not as simple as that `+` is string concatenation if both operands are `String`, but we need to also consider the case when operands are 2 objects. I have written a script that shows the behavior of `+` for different types of operands:
+In JavaScript, there are only 2 behaviors for `+` operator: **numeric plus** and **string concatenation**. However, according to different operand types, the behavior of `+` varies. Of course, when 2 operands are both `Number` the behavior is numeric plus, and when 2 operands are both `String` the behavior is string concatenation. However, since JavaScript is a weakly-typed language, we also need to also consider the case other than these two, such as when 2 operands are both `Object`. To make things clear, I have written a script that shows the behavior of `+` for different types of operands:
 
 ```javascript
 function Test()
@@ -321,9 +335,18 @@ for (var t1 in typeVals)
 
 //todo: add a picture
 
-Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` tyoe, so we can regard them as string concatenation. 
+Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` type, so we can regard them as string concatenation. Even though we can handle all these edge cases, such edge cases rarely occur, so we may need to log some messages to inform user when operands are weird types.
 
-String concatination will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are serveral cases to consider:
+For **Numeric Plus**, the rule is simple: the result is tainted if one of the operands are tainted. However, in some cases false positives may arise when both operands are tainted.
+
+```javascript
+var tainted_int; //number-type tainted variable
+var zero = tainted_int + (-tainted_int);
+```
+
+
+
+String concatenation will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are several cases to consider:
 
 **String**
 

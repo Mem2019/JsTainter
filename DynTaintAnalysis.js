@@ -9,6 +9,7 @@ var config = new (function ()
 	this.ifTaintNaN = true;
 	this.ifTaintResWhenKeyTaint = false;
 	this.ifTaintElemWhenKeyTaint = false;
+	this.logWhenWeirdAddOper = true;
 })();
 
 
@@ -17,10 +18,22 @@ var config = new (function ()
 
 (function (sandbox)
 {
-function TaintAnalysis(rule)
+function TaintAnalysis(rule, config)
 {
 	this.readRec = {};
 	this.writeRec = {};
+	this.logRec = {};
+	const addLogRec = function(pos, msg)
+	{
+		if (typeof this.logRec[pos] == 'undefined')
+		{
+			this.logRec[pos] = [msg];
+		}
+		else
+		{
+			this.logRec[pos].push(msg);
+		}
+	};
 	function AnnotatedValue(val, shadow)
 	{
 		this.val = val;
@@ -167,23 +180,33 @@ function TaintAnalysis(rule)
 	const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 	const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
 
-	function addTaintProp(left, right, result, op, pos)
+	const addTaintProp = function(left, right, result, op, pos)
 	{
-		if (isNumAddOperands(actual(left)) &&
-			isNumAddOperands(actual(right)))
+		const isWeirdType = (v) => !Utils.isNumber(v) && !Utils.isString(v);
+		var aleft = actual(left);
+		var aright = actual(right);
+
+		//log when type is weird
+		if (isWeirdType(aleft) && config.logWhenWeirdAddOper)
+			addLogRec.call(this, pos, "Left operand of + is type " + Utils.getTypeName(aleft));
+		if (isWeirdType(aright) && config.logWhenWeirdAddOper)
+			addLogRec.call(this, pos, "Right operand of + is type " + Utils.getTypeName(aright));
+
+		if (isNumAddOperands(aleft) &&
+			isNumAddOperands(aright))
 		{//numeric add
 			var taint_state = rule.arithmetic(
 				shadow(left), shadow(right), op, pos);
 
-			Log.log(actual(left) + ' ' + op + ' ' +
-				actual(right) + ' = ' + result + '; ');
+			Log.log(aleft + ' ' + op + ' ' +
+				aright + ' = ' + result + '; ');
 			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
 				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
 
 			return new AnnotatedValue(result, taint_state);
 		}
-		else //if (typeof actual(left) === "string" &&
-		//typeof actual(right) === "string")
+		else //if (typeof aleft === "string" &&
+		//typeof aright === "string")
 		{//string concatenation
 			return stringConcatProp(left, right, result);
 		}
@@ -459,79 +482,79 @@ function TaintAnalysis(rule)
 		{
 		case "+":
 			result = aleft + aright;
-			ret = {result: addTaintProp(left, right, result, op, pos)};
+			ret = {result: addTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "-":
 			result = aleft - aright;
-			ret = {result: arithTaintProp(left, right, result, op, pos)};
+			ret = {result: arithTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "*":
 			result = aleft * aright;
-			ret = {result: arithTaintProp(left, right, result, op, pos)};
+			ret = {result: arithTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "/":
 			result = aleft / aright;
-			ret = {result: arithTaintProp(left, right, result, op, pos)};
+			ret = {result: arithTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "%":
 			result = aleft % aright;
-			ret = {result: arithTaintProp(left, right, result, op, pos)};
+			ret = {result: arithTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "<<":
 			result = aleft << aright;
-			ret = {result: shiftTaintProp(left, right, result, op, pos)};
+			ret = {result: shiftTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case ">>":
 			result = aleft >> aright;
-			ret = {result: shiftTaintProp(left, right, result, op, pos)};
+			ret = {result: shiftTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case ">>>":
 			result = aleft >>> aright;
-			ret = {result: shiftTaintProp(left, right, result, op, pos)};
+			ret = {result: shiftTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "<":
 			result = aleft < aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case ">":
 			result = aleft > aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "<=":
 			result = aleft <= aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case ">=":
 			result = aleft >= aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "==":
 			result = aleft == aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "!=":
 			result = aleft != aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "===":
 			result = aleft === aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "!==":
 			result = aleft !== aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "&":
 			result = aleft & aright;//todo: imprive accracy
-			ret = {result: andTaintProp(left, right, result, op, pos)};
+			ret = {result: andTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "|":
 			result = aleft | aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "^":
 			result = aleft ^ aright;
-			ret = {result: cmpTaintProp(left, right, result, op, pos)};
+			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "delete":
 			result = delete aleft[aright];
@@ -588,6 +611,7 @@ function TaintAnalysis(rule)
 	{
 		Log.log(JSON.stringify(this.readRec));
 		Log.log(JSON.stringify(this.writeRec));
+		Log.log(JSON.stringify(this.logRec));
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -878,5 +902,5 @@ function TaintAnalysis(rule)
 	}
 
 }
-sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(config));
+sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(), config);
 })(J$);
