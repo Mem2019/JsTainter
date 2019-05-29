@@ -117,7 +117,11 @@ this.binary = function(iid, op, left, right, result)
 
 In this way we can use the shadow value in the same way as `Jalangi1`. 
 
-However, such operation is still not perfectly correct. For example, `actual([AnnotatedValue(1337, true)])` will still give `[AnnotatedValue(1337, true)]` instead of `[1337]`, because `Array` is not an `AnnotatedValue` instance even if there is an `AnnotatedValue` instance as the array element. We need something that traverse the object recursively and replace all `AnnotatedValue` instances with their `value` fields, and recover them after operation is done. I will discuss this later when `strpTaints` and `mergeTaints` function implementions are covered.
+However, such operation is still not perfectly correct. For example, `actual([AnnotatedValue(1337, true)])` will still give `[AnnotatedValue(1337, true)]` instead of `[1337]`, because `Array` is not an `AnnotatedValue` instance even if there is an `AnnotatedValue` instance as the array element. We need something that traverse the object recursively and replace all `AnnotatedValue` instances with their `value` fields, and recover them after operation is done. I will discuss this later when `strpTaints` and `mergeTaints` function implementations are covered.
+
+## Location
+
+Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being instrumented, where `J$` is a global variable used by `Jalangi2`. The returned position is a string, with format `[absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number]`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2.
 
 # Overall Design
 
@@ -289,6 +293,18 @@ Similar to `stripTaints` function, there are also some points:
 
 The implementation for `stripTaints` is clear and simple, we check the variable type first
 
+## Result of Taint Analysis
+
+Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. Here are my approach to record the results of the dynamic taint analysis.
+
+### Tainted Variable Read and Write
+
+`TaintAnalysis` class of `JsTainter` will maintain 2 objects as field that maps the location (which is obtained from `iid` and covered in last section) to the number of times this particular variable is read or write with taint. To be specific, `readRec` and `writeRec` are the fields to record taint variable read and taint variable write, respectively.  When value of some tainted variable is read or written, this corresponding key will be incremented. For example, if `a=b+c` at line 1 of `file.js` is executed and `b` is tainted, the value in `readRec["file.js:1:3:1:4"]` will be incremented. //todo, maybe add a figure
+
+### Special Information
+
+The special information is also one of the results of taint analysis, `logRec` field, to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a `if` statement. These information can help user to customize the taint propagation rule and make the analysis more accurate. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later. Same as 2 fields above, the `logRec` also uses position as key, but the value is an array of string that recorded all messages being logged at this position.
+
 ## Binary Operators
 
 In this subsection I will discuss taint propagation rule design for binary operator in this project. Because there is no operator overloads in JavaScript, the behaviors of binary operators are always certain.
@@ -335,7 +351,7 @@ for (var t1 in typeVals)
 
 //todo: add a picture
 
-Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` type, so we can regard them as string concatenation. Even though we can handle all these edge cases, such edge cases rarely occur, so we may need to log some messages to inform user when operands are weird types.
+Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` type, so we can regard them as string concatenation. Even though we can handle all these edge cases, such edge cases rarely occur, so `JsTainter` would also record the messages into `logRec` to inform user when type of operand is any edge case.
 
 For **Numeric Plus**, the rule is simple: the result is tainted if one of the operands are tainted. However, in some cases false positives may arise when both operands are tainted.
 
@@ -344,9 +360,9 @@ var tainted_int; //number-type tainted variable
 var zero = tainted_int + (-tainted_int);
 ```
 
+Cases like this is unavoidable with pure taint analysis (e.i. without symbolic execution), but fortunately such case rarely occurs. My approach to handle such situation is to record into `logRec` if both operands are tainted in `+` operation and user chooses to record this in configuration.
 
-
-String concatenation will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are several cases to consider:
+**String Concatenation** will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are several cases to consider:
 
 **String**
 
@@ -362,7 +378,7 @@ var num = parseInt(input);
 document.write("Age: " + num);
 ```
 
-The num must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into `document.write` is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as `taint level` that has been discussed above. //When it is sanitized, the taint state will be somewhat different from the taint state before sanitizing.
+The `num` must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into `document.write` is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as `taint level` that has been discussed above. //When it is sanitized, the taint state will be somewhat different from the taint state before sanitizing.
 
 **Array**
 
@@ -482,7 +498,7 @@ Considering these factors, we can implement the function that obtain the taint a
 
 ### Binary Arithmetic Operator
 
-Binary arithmetic operators are operators like `-`, `*`, `/` and `%`. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But types other than `Number`, things become hard to analyze. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
+Binary arithmetic operators are operators like `-`, `*`, `/` and `%`. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But types other than `Number`, things become hard to analyze. Therefore, to inform user, `JsTainter` would record the message into `logRec` when the type of operand is something other than number. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
 
 //todo: table
 

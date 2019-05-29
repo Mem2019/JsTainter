@@ -10,6 +10,7 @@ var config = new (function ()
 	this.ifTaintResWhenKeyTaint = false;
 	this.ifTaintElemWhenKeyTaint = false;
 	this.logWhenWeirdAddOper = true;
+	this.logWhenWeirdArithOper = true;
 })();
 
 
@@ -23,15 +24,15 @@ function TaintAnalysis(rule, config)
 	this.readRec = {};
 	this.writeRec = {};
 	this.logRec = {};
-	const addLogRec = function(pos, msg)
+	const addLogRec = function(analysis, pos, msg)
 	{
-		if (typeof this.logRec[pos] == 'undefined')
+		if (typeof analysis.logRec[pos] == 'undefined')
 		{
-			this.logRec[pos] = [msg];
+			analysis.logRec[pos] = [msg];
 		}
 		else
 		{
-			this.logRec[pos].push(msg);
+			analysis.logRec[pos].push(msg);
 		}
 	};
 	function AnnotatedValue(val, shadow)
@@ -185,24 +186,26 @@ function TaintAnalysis(rule, config)
 		const isWeirdType = (v) => !Utils.isNumber(v) && !Utils.isString(v);
 		var aleft = actual(left);
 		var aright = actual(right);
+		var sleft = shadow(left);
+		var sright = shadow(right);
 
 		//log when type is weird
 		if (isWeirdType(aleft) && config.logWhenWeirdAddOper)
-			addLogRec.call(this, pos, "Left operand of + is type " + Utils.getTypeName(aleft));
+			addLogRec(this, pos, "Left operand of + is type " + Utils.getTypeName(aleft));
 		if (isWeirdType(aright) && config.logWhenWeirdAddOper)
-			addLogRec.call(this, pos, "Right operand of + is type " + Utils.getTypeName(aright));
+			addLogRec(this, pos, "Right operand of + is type " + Utils.getTypeName(aright));
 
 		if (isNumAddOperands(aleft) &&
 			isNumAddOperands(aright))
 		{//numeric add
 			var taint_state = rule.arithmetic(
-				shadow(left), shadow(right), op, pos);
+				sleft, sright, op, pos);
 
-			Log.log(aleft + ' ' + op + ' ' +
-				aright + ' = ' + result + '; ');
-			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
-				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
-
+			if (isTainted(sleft) && isTainted(sright) &&
+				config.logWhenBothTaintArithOper)
+			{
+				addLogRec(this, pos, "Both operands of + are tainted");
+			}
 			return new AnnotatedValue(result, taint_state);
 		}
 		else //if (typeof aleft === "string" &&
@@ -210,7 +213,7 @@ function TaintAnalysis(rule, config)
 		{//string concatenation
 			return stringConcatProp(left, right, result);
 		}
-	}
+	};
 
 	const numChar = new Set("0123456789xXabcdefABCDEF.-InfinityNaN");
 	function alwaysGiveNaNStr(v, s)
@@ -238,7 +241,7 @@ function TaintAnalysis(rule, config)
 	function alwaysGiveNaN(rawVal)
 	{
 		var val = actual(rawVal);
-		var s = shadow(rawVal, rule.noTaint);
+		var s = shadow(rawVal);
 		var t = typeof val;
 		var b = (t === 'string') && alwaysGiveNaNStr(val, s);
 		return (t === 'object' && val !== null &&
@@ -249,6 +252,14 @@ function TaintAnalysis(rule, config)
 
 	function binaryTaintProp(callback, left, right, result, op, pos)
 	{
+		var aleft = actual(left);
+		var aright = actual(right);
+		var sleft = shadow(left);
+		var sright = shadow(right);
+		if (!Utils.isNumber(aleft) && config.logWhenWeirdArithOper)
+			addLogRec(this, pos, "Left operand of " + op + " is type " + Utils.getTypeName(aleft));
+		if (!Utils.isNumber(aright) && config.logWhenWeirdArithOper)
+			addLogRec(this, pos, "Right operand of " + op + " is type " + Utils.getTypeName(aleft));
 		if (callback(left, right))
 		{
 			return result;
@@ -256,23 +267,16 @@ function TaintAnalysis(rule, config)
 		else
 		{
 			var taint_state = rule.arithmetic(
-				rule.compressTaint(shadow(left)),
-				rule.compressTaint(shadow(right)),
+				rule.compressTaint(sleft),
+				rule.compressTaint(sright),
 				op, pos);
-
-			//logger.binary(actual(left), shadow(left), actual());
-			Log.log(actual(left) + ' ' + op + ' ' +
-				actual(right) + ' = ' + result + '; ');
-			Log.log(shadow(left, rule.noTaint) + ' ' + op + ' ' +
-				shadow(right, rule.noTaint) + ' = ' + taint_state + '\n');
-
 			return getTaintResult(result, taint_state);
 		}
 	}
 
 	function arithTaintProp(left, right, result, op, pos)
 	{
-		return binaryTaintProp((left, right) =>
+		return binaryTaintProp.call(this, (left, right) =>
 			alwaysGiveNaN(left) || alwaysGiveNaN(right),
 			left, right, result, op, pos);
 	}
@@ -294,12 +298,12 @@ function TaintAnalysis(rule, config)
 	function shiftTaintProp(left, right, result, op, pos)
 	{
 		//if LHS is always NaN, result is always 0
-		return binaryTaintProp((left) => isZeroInOper(left), left, right, result, op, pos);
+		return binaryTaintProp.call(this, (left) => isZeroInOper(left), left, right, result, op, pos);
 	}
 
 	function cmpTaintProp(left, right, result, op, pos)
 	{//todo, consider more cases to improve accuracy
-		return binaryTaintProp(()=>false, left, right, result, op, pos);
+		return binaryTaintProp.call(this, ()=>false, left, right, result, op, pos);
 	}
 
 
@@ -462,7 +466,7 @@ function TaintAnalysis(rule, config)
 
 	function andTaintProp(left, right, result, op, pos)
 	{
-		return binaryTaintProp(
+		return binaryTaintProp.call(this, 
 			(left, right) =>
 				isZeroInOper(left) || isZeroInOper(right),
 			left, right, result, op, pos);
@@ -892,13 +896,17 @@ function TaintAnalysis(rule, config)
 	};
 	this.read = function (iid, name, val)
 	{
+		var pos = getPosition(iid);
 		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-			this.readRec[getPosition(iid)] = 1;
+			this.readRec[pos] =  typeof this.readRec[pos] == 'undefined' ?
+				1 : this.readRec[pos] + 1;
 	};
 	this.write = function (iid, name, val)
 	{
+		var pos = getPosition(iid);
 		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-			this.writeRec[getPosition(iid)] = 2;
+			this.writeRec[pos] = typeof this.writeRec[pos] == 'undefined' ?
+				1 : this.writeRec[pos] + 1;
 	}
 
 }
