@@ -1,0 +1,87 @@
+var assertTaint = "assertTaint";
+var assert = "assert";
+var debug = "debug";
+var taintedInt;
+var taintedStr;
+var taintedBool;
+var taintedIdx;
+var taintedArr;
+var s,a;
+var obj;
+
+taintedStr = "ta1nt3d_string31337";
+taintedInt = "ta1nt3d_int31337";
+
+//test shift <<
+//(a,b) => a && b;
+//assertTaint([taintedInt] << [taintedInt], true);
+assertTaint(taintedStr << NaN, true);
+assertTaint(taintedStr << null, true);
+assertTaint(taintedStr << "asd", true);
+assertTaint(taintedStr << undefined, true);
+assertTaint(taintedStr << (taintedStr+'0x'+taintedStr), true);
+assertTaint(NaN << taintedStr, false);
+assertTaint(null << taintedStr, false);
+assertTaint("asd" << taintedStr, false);
+assertTaint(undefined << taintedStr, false);
+assertTaint((taintedStr+'0x'+taintedStr) << taintedStr, false);
+assertTaint(0 << taintedStr, false);
+assertTaint(taintedInt << NaN, true);
+assertTaint(taintedInt << null, true);
+assertTaint(taintedInt << "asd", true);
+assertTaint(taintedInt << undefined, true);
+assertTaint(taintedInt << (taintedInt+'0x'+taintedInt), true);
+assertTaint(NaN << taintedInt, false);
+assertTaint(null << taintedInt, false);
+assertTaint("asd" << taintedInt, false);
+assertTaint(undefined << taintedInt, false);
+assertTaint((taintedInt+'0x'+taintedInt) << taintedInt, false);
+assertTaint(0 << taintedInt, false);
+
+//test shift >>
+assertTaint(taintedStr >> NaN, true);
+assertTaint(taintedStr >> null, true);
+assertTaint(taintedStr >> "asd", true);
+assertTaint(taintedStr >> undefined, true);
+assertTaint(taintedStr >> (taintedStr+'0x'+taintedStr), true);
+assertTaint(NaN >> taintedStr, false);
+assertTaint(null >> taintedStr, false);
+assertTaint("asd" >> taintedStr, false);
+assertTaint(undefined >> taintedStr, false);
+assertTaint((taintedStr+'0x'+taintedStr) >> taintedStr, false);
+assertTaint(0 >> taintedStr, false);
+assertTaint(taintedInt >> NaN, true);
+assertTaint(taintedInt >> null, true);
+assertTaint(taintedInt >> "asd", true);
+assertTaint(taintedInt >> undefined, true);
+assertTaint(taintedInt >> (taintedInt+'0x'+taintedInt), true);
+assertTaint(NaN >> taintedInt, false);
+assertTaint(null >> taintedInt, false);
+assertTaint("asd" >> taintedInt, false);
+assertTaint(undefined >> taintedInt, false);
+assertTaint((taintedInt+'0x'+taintedInt) >> taintedInt, false);
+assertTaint(0 >> taintedInt, false);
+
+//test shift >>>
+assertTaint(taintedStr >>> NaN, true);
+assertTaint(taintedStr >>> null, true);
+assertTaint(taintedStr >>> "asd", true);
+assertTaint(taintedStr >>> undefined, true);
+assertTaint(taintedStr >>> (taintedStr+'0x'+taintedStr), true);
+assertTaint(NaN >>> taintedStr, false);
+assertTaint(null >>> taintedStr, false);
+assertTaint("asd" >>> taintedStr, false);
+assertTaint(undefined >>> taintedStr, false);
+assertTaint((taintedStr+'0x'+taintedStr) >>> taintedStr, false);
+assertTaint(0 >>> taintedStr, false);
+assertTaint(taintedInt >>> NaN, true);
+assertTaint(taintedInt >>> null, true);
+assertTaint(taintedInt >>> "asd", true);
+assertTaint(taintedInt >>> undefined, true);
+assertTaint(taintedInt >>> (taintedInt+'0x'+taintedInt), true);
+assertTaint(NaN >>> taintedInt, false);
+assertTaint(null >>> taintedInt, false);
+assertTaint("asd" >>> taintedInt, false);
+assertTaint(undefined >>> taintedInt, false);
+assertTaint((taintedInt+'0x'+taintedInt) >>> taintedInt, false);
+assertTaint(0 >>> taintedInt, false);

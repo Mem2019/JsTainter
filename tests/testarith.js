@@ -1,12 +1,52 @@
-var a = "ta1nt3d_int";
-var b = '' + a;
-var hex = '0x' + b;
-var flt = '0.' + b;
-var wrong = '0..' + b;
-var r = hex - 0;
-r = flt - 0;
-r = wrong - 0;
-// hex.substr(0, hex.length);
-// flt.substr(0, flt.length);
-// wrong.substr(0, wrong.length);
-var a = "2019" && "9102";
+var assertTaint = "assertTaint";
+var assert = "assert";
+var debug = "debug";
+var taintedInt;
+var taintedStr;
+var taintedBool;
+var taintedIdx;
+var taintedArr;
+var s,a;
+var obj;
+
+
+//test arithmetic operation -
+taintedStr = "ta1nt3d_string31337";
+assertTaint(taintedStr - 7, true);
+assertTaint(("0x" + taintedStr) - 7, true);
+assertTaint(("0." + taintedStr) - 7, true);
+assertTaint(("0x." + taintedStr) - 7, false);
+assertTaint((taintedStr) - 7, true);
+assertTaint((taintedStr + '123' + taintedStr) - 7, true);
+assertTaint((taintedStr + '0x' + taintedStr) - 7, false);
+assertTaint((taintedStr + 'e' + taintedStr) - 7, true);
+
+// *
+assertTaint(taintedStr * 7, true);
+assertTaint(("0x" + taintedStr) * 7, true);
+assertTaint(("0." + taintedStr) * 7, true);
+assertTaint(("0x." + taintedStr) * 7, false);
+assertTaint((taintedStr) * 7, true);
+assertTaint((taintedStr + '123' + taintedStr) * 7, true);
+assertTaint((taintedStr + '0x' + taintedStr) * 7, false);
+assertTaint((taintedStr + 'e' + taintedStr) * 7, true);
+
+// /
+assertTaint(taintedStr / 7, true);
+assertTaint(("0x" + taintedStr) / 7, true);
+assertTaint(("0." + taintedStr) / 7, true);
+assertTaint(("0x." + taintedStr) / 7, false);
+assertTaint((taintedStr) / 7, true);
+assertTaint((taintedStr + '123' + taintedStr) / 7, true);
+assertTaint((taintedStr + '0x' + taintedStr) / 7, false);
+assertTaint((taintedStr + 'e' + taintedStr) / 7, true);
+
+// %
+assertTaint(taintedStr % 7, true);
+assertTaint(("0x" + taintedStr) % 7, true);
+assertTaint(("0." + taintedStr) % 7, true);
+assertTaint(("0x." + taintedStr) % 7, false);
+assertTaint((taintedStr) % 7, true);
+assertTaint((taintedStr + '123' + taintedStr) % 7, true);
+assertTaint((taintedStr + '0x' + taintedStr) % 7, false);
+assertTaint((taintedStr + 'e' + taintedStr) % 7, true);

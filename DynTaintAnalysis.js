@@ -311,7 +311,7 @@ function TaintAnalysis(rule, config)
 			left, right, result, op, pos);
 	}
 
-	const bitOpers = Set(['|', '&', '^']);
+	const bitOpers = new Set(['|', '&', '^']);
 	function cmpTaintProp(left, right, result, op, pos)
 	{//todo, consider more cases to improve accuracy
 		return binaryTaintProp.call(this, ()=>false,
