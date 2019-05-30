@@ -11,6 +11,9 @@ var config = new (function ()
 	this.ifTaintElemWhenKeyTaint = false;
 	this.logWhenWeirdAddOper = true;
 	this.logWhenWeirdArithOper = true;
+	this.logWhenBothTaintCmpOper = true;
+	this.logWhenBitOperTaint = true;
+	this.logWhenTaintedOffset = true;
 })();
 
 
@@ -180,6 +183,7 @@ function TaintAnalysis(rule, config)
 
 	const numAddTypes = new Set(['undefined', 'boolean', 'number']);
 	const isNumAddOperands = (val) => numAddTypes.has(typeof val) || val === null;
+	const bothTained = (sleft, sright) => isTainted(sleft) && isTainted(sright);
 
 	const addTaintProp = function(left, right, result, op, pos)
 	{
@@ -194,18 +198,16 @@ function TaintAnalysis(rule, config)
 			addLogRec(this, pos, "Left operand of + is type " + Utils.getTypeName(aleft));
 		if (isWeirdType(aright) && config.logWhenWeirdAddOper)
 			addLogRec(this, pos, "Right operand of + is type " + Utils.getTypeName(aright));
+		if (bothTained(sleft, sright) && config.logWhenBothTaintArithOper)
+		{
+			addLogRec(this, pos, "Both operands of + are tainted");
+		}
 
 		if (isNumAddOperands(aleft) &&
 			isNumAddOperands(aright))
 		{//numeric add
 			var taint_state = rule.arithmetic(
 				sleft, sright, op, pos);
-
-			if (isTainted(sleft) && isTainted(sright) &&
-				config.logWhenBothTaintArithOper)
-			{
-				addLogRec(this, pos, "Both operands of + are tainted");
-			}
 			return new AnnotatedValue(result, taint_state);
 		}
 		else //if (typeof aleft === "string" &&
@@ -250,16 +252,13 @@ function TaintAnalysis(rule, config)
 	}
 //string that will always produce NaN
 
-	function binaryTaintProp(callback, left, right, result, op, pos)
+	function binaryTaintProp(callback, log_callback, left, right, result, op, pos)
 	{
 		var aleft = actual(left);
 		var aright = actual(right);
 		var sleft = shadow(left);
 		var sright = shadow(right);
-		if (!Utils.isNumber(aleft) && config.logWhenWeirdArithOper)
-			addLogRec(this, pos, "Left operand of " + op + " is type " + Utils.getTypeName(aleft));
-		if (!Utils.isNumber(aright) && config.logWhenWeirdArithOper)
-			addLogRec(this, pos, "Right operand of " + op + " is type " + Utils.getTypeName(aleft));
+		log_callback(this, aleft, aright, pos, op, sleft, sright);
 		if (callback(left, right))
 		{
 			return result;
@@ -274,10 +273,19 @@ function TaintAnalysis(rule, config)
 		}
 	}
 
+	const numBinOperCallback = function (analysis, aleft, aright, pos, op)
+	{
+		if (!Utils.isNumber(aleft) && config.logWhenWeirdArithOper)
+			addLogRec(analysis, pos, "Left operand of " + op + " is type " + Utils.getTypeName(aleft));
+		if (!Utils.isNumber(aright) && config.logWhenWeirdArithOper)
+			addLogRec(analysis, pos, "Right operand of " + op + " is type " + Utils.getTypeName(aleft));
+	};
+
 	function arithTaintProp(left, right, result, op, pos)
 	{
 		return binaryTaintProp.call(this, (left, right) =>
 			alwaysGiveNaN(left) || alwaysGiveNaN(right),
+			numBinOperCallback,
 			left, right, result, op, pos);
 	}
 
@@ -298,12 +306,27 @@ function TaintAnalysis(rule, config)
 	function shiftTaintProp(left, right, result, op, pos)
 	{
 		//if LHS is always NaN, result is always 0
-		return binaryTaintProp.call(this, (left) => isZeroInOper(left), left, right, result, op, pos);
+		return binaryTaintProp.call(this, (left) => isZeroInOper(left),
+			numBinOperCallback,
+			left, right, result, op, pos);
 	}
 
+	const bitOpers = Set(['|', '&', '^']);
 	function cmpTaintProp(left, right, result, op, pos)
 	{//todo, consider more cases to improve accuracy
-		return binaryTaintProp.call(this, ()=>false, left, right, result, op, pos);
+		return binaryTaintProp.call(this, ()=>false,
+			function(analysis, aleft, aright, pos, op, sleft, sright)
+			{
+				if (bitOpers.has(op) && config.logWhenBitOperTaint)
+				{
+					addLogRec(analysis, pos, "Tainted variable is used as operand of " + op);
+				}
+				if (bothTained(sleft, sright) && config.logWhenBothTaintCmpOper)
+				{
+					addLogRec(analysis, pos, "Both operands of "+op+" are tainted");
+				}
+			},
+			left, right, result, op, pos);
 	}
 
 
@@ -469,6 +492,7 @@ function TaintAnalysis(rule, config)
 		return binaryTaintProp.call(this, 
 			(left, right) =>
 				isZeroInOper(left) || isZeroInOper(right),
+			function(){},
 			left, right, result, op, pos);
 	}
 	this.binaryPre = function(iid, op, left, right)
@@ -843,10 +867,17 @@ function TaintAnalysis(rule, config)
 	};
 	this.getField = function (iid, base, offset)
 	{
+		var pos = getPosition(iid);
 		var abase = actual(base);
 		var aoff = actual(offset);
 		var soff = shadow(offset);
 		var sbase = shadow(base);
+
+		if (isTainted(soff) && config.logWhenTaintedOffset)
+		{
+			addLogRec(this, pos, "Tainted offset");
+		}
+
 
 		var ret,sv,f;
 		if (typeof abase == "string"
