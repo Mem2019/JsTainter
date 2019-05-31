@@ -14,6 +14,7 @@ var config = new (function ()
 	this.logWhenBothTaintCmpOper = true;
 	this.logWhenBitOperTaint = true;
 	this.logWhenTaintedOffset = true;
+	this.logAtCond = true;
 })();
 
 
@@ -208,7 +209,7 @@ function TaintAnalysis(rule, config)
 		{//numeric add
 			var taint_state = rule.arithmetic(
 				sleft, sright, op, pos);
-			return new AnnotatedValue(result, taint_state);
+			return getTaintResult(result, taint_state);
 		}
 		else //if (typeof aleft === "string" &&
 		//typeof aright === "string")
@@ -602,6 +603,22 @@ function TaintAnalysis(rule, config)
 		}
 		return ret;
 	};
+	this.unary = function ()
+	{
+
+	};
+	this.forinObject = function (iid, val)
+	{
+		return {result: actual(val)};
+	};
+	this.conditional = function (iid, result)
+	{
+		if (isTainted(shadow(result)) && config.logAtCond)
+		{
+			addLogRec(this, getPosition(iid), "Tainted variable " +
+				JSON.stringify(actual(result)) + " being used in conditional");
+		}
+	};
 	this.literal = function (iid, val, hasGetterSetter)
 	{
 		if (typeof val === 'function')
@@ -916,14 +933,23 @@ function TaintAnalysis(rule, config)
 	};
 	this._with = function (iid, val)
 	{
-		var aval = actual(val);
-		var sval = shadow(val);
+		var aval = actual(val); // get `val` field
+		var sval = shadow(val); // get `shadow` field
 		var ret = {};
 		for (var k in aval)
 		{
+			/*
+			traverse all fields,
+			create correct AnnotatedValue object with corresponding shadow value,
+			assign it to the corresponding field of the newly created object,
+			*/
 			ret[k] = getTaintResult(aval[k], sval[k]);
+			//getTaintResult is a wrapper for creation of AnnotatedValue,
+			//and will create AnnotatedValue object only if shadow value is tainted,
+			//which is just an optimization
 		}
-		return {result:ret}
+		return {result:ret};
+		//return that newly created object
 	};
 	this.read = function (iid, name, val)
 	{

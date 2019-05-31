@@ -839,15 +839,53 @@ todo, there are some wired behavior
 
 ### SandBox
 
-What if the codes being analyzed is malicious and want to gain previlidge? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
+What if the codes being analyzed is malicious and want to gain privilege? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
 
-## Log
+## Other Instrumentation
 
-In some cases that the dynamic taint analysis might fail to work, information should be presented to user that the code here might cause inaccurate result.
+### _with
 
-### Arithmetic Operation
+`_with` is the instrumentation callback that will be executed when `with` statement is executed. Since currently, the design is to wrap the object inside an `AnnotatedValue` object, if `with` is applied directly to an `AnnotatedValue` object, instead of extending the scope chain using the fields inside the original object, scope chain will be extended using fields of `AnnotatedValue` (e.i. `val` and `shadow`), which is incorrect. For example, we have an object `AnnotatedValue({a:1,b:2}, {a:true}`, after being applied by `with`, scope being extended will be `val==={a:1,b:2}` and `shadow==={a:true}`, which not what we want because we actually want `a===AnnotatedValue(1,true)` and `b===2`. Therefore, we want to instrument the `with` statement and make it work like that.
 
-In current design, we taint the result as long as one of the argument 
+According to the Jalangi2 documentation, we can modify the object being used by `with` statement by setting the `result` field of return value. Therefore, the desired effect can be implemented by creating an new object and setting the corresponding field to intended `AnnotatedValue` object, and enable `with` statement to use it by setting the `result` field of return value object. The instrumentation callback is shown below.
+
+```javascript
+this._with = function (iid, val)
+{
+	var aval = actual(val); // get `val` field
+	var sval = shadow(val); // get `shadow` field
+	var ret = {};
+	for (var k in aval)
+	{
+		/*
+		traverse all fields,
+		create correct AnnotatedValue object with corresponding shadow value,
+		assign it to the corresponding field of the newly created object,
+		*/
+		ret[k] = getTaintResult(aval[k], sval[k]);
+		/*
+		getTaintResult is a wrapper for creation of AnnotatedValue,
+		and will create AnnotatedValue object only if shadow value is tainted,
+        which is just an optimization
+        */
+	}
+	return {result:ret};
+	//return that newly created object as the result
+};
+```
+
+### forinObject
+
+Similar to `with` statement, if an object wrapped by `AnnotatedValue`, and a `for` loop is used to iterate the keys of the object (e.i. `for (var k in obj) {...}`), the iteration will be wrong. The reason is very similar: `val` and `shadow` fields of `AnnotatedValue` will be iterated instead of fields inside keys in the original object. Using the same example, `AnnotatedValue({a:1,b:2}, {a:true})`, we want the iteration to be string keys `"a"` followed by `"b"`, but in reality `"val"` and `"shadow"` string keys will be iterated. 
+
+Therefore, we need to set `forinObject` instrumentation callback function to handle it. Since this operation only cares about the properties instead of values, we only need to return `val` field of `AnnotatedValue` because it is exactly the original object but without shadow values, which must have the same properties. Thus the implementation is very simple, shown below.
+
+```javascript
+this.forinObject = function (iid, val)
+{
+	return {result: actual(val)};
+};
+```
 
 # Test
 
