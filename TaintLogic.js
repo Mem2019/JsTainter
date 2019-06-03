@@ -13,6 +13,10 @@ TaintUnit.prototype.arithmetic = function(left, right, op, pos)
 {
 	return left || right;
 };
+TaintUnit.prototype.unaryArithmetic = function(left)
+{
+	return left;
+};
 TaintUnit.prototype.toStringTaint = function(a,t,f)
 {
 	var ret;

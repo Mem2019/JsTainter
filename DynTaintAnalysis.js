@@ -274,6 +274,38 @@ function TaintAnalysis(rule, config)
 		}
 	}
 
+	function unaryTaintProp(callback, log_callback, left, result, op, pos)
+	{
+		var aleft = actual(left);
+		var sleft = shadow(left);
+		log_callback(this, aleft, pos, op, sleft);
+		if (callback(left))
+		{
+			return result;
+		}
+		else
+		{
+			var taint_state = rule.unaryArithmetic(
+				rule.compressTaint(sleft),
+				op, pos);
+			return getTaintResult(result, taint_state);
+		}
+	}
+
+	const numUnOperCallback = function (analysis, aleft, pos, op)
+	{
+		if (!Utils.isNumber(aleft) && config.logWhenWeirdArithOper)
+			addLogRec(analysis, pos, "Operand of " + op + " is type " + Utils.getTypeName(aleft));
+	};
+
+	function unarithTaintProp(left, result, op, pos)
+	{
+		return unaryTaintProp.call(this,
+			alwaysGiveNaN,
+			numUnOperCallback,
+			left, result, op, pos);
+	}
+
 	const numBinOperCallback = function (analysis, aleft, aright, pos, op)
 	{
 		if (!Utils.isNumber(aleft) && config.logWhenWeirdArithOper)
@@ -603,9 +635,45 @@ function TaintAnalysis(rule, config)
 		}
 		return ret;
 	};
-	this.unary = function ()
+	this.unaryPre = function (iid, op, left)
 	{
-
+		return {op:op, left:left, skip:true};
+	};
+	this.unary = function (iid, op, left, result)
+	{
+		var pos = getPosition(iid);
+		var ret;
+		var aleft = actual(left);
+		switch (op)
+		{
+		case "+":
+			result = +aleft;
+			ret = {result:unarithTaintProp.call(this, left, result, op, pos)};
+			break;
+		case "-":
+			result = -aleft;
+			ret = {result:unarithTaintProp.call(this, left, result, op, pos)};
+			break;
+		case "~":
+			result = ~aleft;
+			ret = {result:unarithTaintProp.call(this, left, result, op, pos)};
+			break;
+		case "!":
+			result = !aleft;
+			ret = {result:unarithTaintProp.call(this, left, result, op, pos)};
+			break;
+		case "typeof":
+			result = typeof aleft;
+			ret = {result : result};
+			break;
+		case "void":
+			result = void (aleft);
+			ret = {result : result};
+			break;
+		default:
+			throw new Error(op + " at " + iid + " not found");
+			break;
+		}
 	};
 	this.forinObject = function (iid, val)
 	{

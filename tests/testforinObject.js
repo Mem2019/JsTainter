@@ -1,6 +1,6 @@
 var assertTaint = "assertTaint";
 var assert = "assert";
-var obj = {}
+var obj = {};
 var a = "ta1nt3d_intNaN";
 var b = "ta1nt3d_stringNaN";
 
@@ -9,14 +9,14 @@ obj.b = b;
 var i = 0;
 for (var k in obj)
 {
-	if (i == 0)
+	if (i === 0)
 	{
 		assertTaint(obj[k], true);
 	}
-	else if (i == 1)
+	else if (i === 1)
 	{
 		assertTaint(obj[k], [true, true, true]);
 	}
 	++i;
 }
-assert(i == 2);
+assert(i === 2);
