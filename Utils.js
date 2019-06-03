@@ -1,3 +1,4 @@
+(function (sandbox) {
 function isNative(func)
 {
 	var toString = Function.prototype.toString;
@@ -34,8 +35,5 @@ Utils.prototype.isString = isString;
 Utils.prototype.getTypeName = getTypeName;
 Utils.prototype.assert = require('assert');//todo: node.js
 
-//todo: ----------nodejs
-module.exports = {
-	Utils : Utils
-};
-//----------nodejs
+sandbox.dtaUtils = new Utils();
+})(J$);

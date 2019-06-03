@@ -1,28 +1,29 @@
-//todo: --------------nodejs
-const Utils = new (require("./Utils").Utils)();
-const assert = require("assert");
-const Log = new (require("./Log").Log)();
-//----------nodejs
-
-var config = new (function ()
-{
-	this.ifTaintNaN = true;
-	this.ifTaintResWhenKeyTaint = false;
-	this.ifTaintElemWhenKeyTaint = false;
-	this.logWhenWeirdAddOper = true;
-	this.logWhenWeirdArithOper = true;
-	this.logWhenBothTaintCmpOper = true;
-	this.logWhenBitOperTaint = true;
-	this.logWhenTaintedOffset = true;
-	this.logAtCond = true;
-})();
-
-
-
-
-
 (function (sandbox)
 {
+const Utils = sandbox.dtaUtils;
+const Log = sandbox.dtaLog;
+
+	const assert = function (b)
+	{
+		if (b === false)
+			throw Error("Assertion Error");
+	};
+
+
+	var config = new (function ()
+	{
+		this.ifTaintNaN = true;
+		this.ifTaintResWhenKeyTaint = false;
+		this.ifTaintElemWhenKeyTaint = false;
+		this.logWhenWeirdAddOper = true;
+		this.logWhenWeirdArithOper = true;
+		this.logWhenBothTaintCmpOper = true;
+		this.logWhenBitOperTaint = true;
+		this.logWhenTaintedOffset = true;
+		this.logAtCond = true;
+	})();
+
+
 function TaintAnalysis(rule, config)
 {
 	this.readRec = {};
@@ -674,6 +675,7 @@ function TaintAnalysis(rule, config)
 			throw new Error(op + " at " + iid + " not found");
 			break;
 		}
+		return ret;
 	};
 	this.forinObject = function (iid, val)
 	{
@@ -1035,5 +1037,6 @@ function TaintAnalysis(rule, config)
 	}
 
 }
-sandbox.analysis = new TaintAnalysis(new (require("./TaintLogic").TaintUnit)(), config);
+const TaintUnit = sandbox.dtaTaintLogic;
+sandbox.analysis = new TaintAnalysis(new TaintUnit(), config);
 })(J$);

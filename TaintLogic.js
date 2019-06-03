@@ -1,8 +1,6 @@
-//todo: --------------nodejs
-const Utils = new (require("./Utils").Utils)();
-const Log = new (require("./Log").Log)();
-//----------nodejs
 
+(function (sandbox) {
+	const Utils = sandbox.dtaUtils;
 function TaintUnit(config)
 {
 	this.config = config;
@@ -88,19 +86,6 @@ TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startId
 	ret = false;
 	return ret;
 };
-// TaintUnit.prototype.compressTaint = function(s)
-// {
-// 	if (Array.isArray(s))
-// 	{
-//
-// 	}
-// };
-
-
+sandbox.dtaTaintLogic = TaintUnit;
+})(J$);
 //todo, make it an array of boolean
-
-//todo: ------------nodejs
-module.exports = {
-	TaintUnit : TaintUnit
-};
-//----------nodejs

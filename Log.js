@@ -1,11 +1,20 @@
+
+(function (sandbox) {
+
 function Log(){}
 Log.prototype.log = function (msg)
 {
-	process.stdout.write("[*] Log: " + msg + '\n');
+	const logStr = "[*] Log: " + msg + '\n';
+	if (typeof process !== 'undefined')
+		process.stdout.write(logStr);
+	else if (typeof console !== 'undefined')
+		console.log(logStr);
 };
 
-//todo: ----------nodejs
+sandbox.dtaLog = new Log();
+})(J$);
+/*/: ----------nodejs
 module.exports = {
 	Log : Log
 };
-//----------nodejs
+//----------nodejs*/
