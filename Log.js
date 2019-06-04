@@ -5,10 +5,11 @@ function Log(){}
 Log.prototype.log = function (msg)
 {
 	const logStr = "[*] Log: " + msg + '\n';
-	if (typeof process !== 'undefined')
-		process.stdout.write(logStr);
-	else if (typeof console !== 'undefined')
+
+	if (typeof sandbox.dtaBrowser != 'undefined')
 		console.log(logStr);
+	else
+		process.stdout.write(logStr);
 };
 
 sandbox.dtaLog = new Log();

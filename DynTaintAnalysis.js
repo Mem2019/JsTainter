@@ -683,11 +683,13 @@ function TaintAnalysis(rule, config)
 	};
 	this.conditional = function (iid, result)
 	{
+		var aresult = actual(result);
 		if (isTainted(shadow(result)) && config.logAtCond)
 		{
 			addLogRec(this, getPosition(iid), "Tainted variable " +
-				JSON.stringify(actual(result)) + " being used in conditional");
+				JSON.stringify(aresult) + " being used in conditional");
 		}
+		return {result:aresult};
 	};
 	this.literal = function (iid, val, hasGetterSetter)
 	{
@@ -952,6 +954,15 @@ function TaintAnalysis(rule, config)
 	{
 		return {base:base, offset:offset, skip:true};
 	};
+	function browserGetField(base, offset)
+	{
+		if (typeof sandbox.dtaBrowser != 'undefined')
+		{
+			var ret = sandbox.dtaBrowser.getField(base, offset);
+			if (typeof ret != 'undefined')
+				return new AnnotatedValue(base[offset], ret);
+		}
+	}
 	this.getField = function (iid, base, offset)
 	{
 		var pos = getPosition(iid);
@@ -960,31 +971,37 @@ function TaintAnalysis(rule, config)
 		var soff = shadow(offset);
 		var sbase = shadow(base);
 
-		if (isTainted(soff) && config.logWhenTaintedOffset)
+		var val = browserGetField(abase, aoff);
+		if (typeof val == 'undefined')
 		{
-			addLogRec(this, pos, "Tainted offset");
-		}
+			if (isTainted(soff) && config.logWhenTaintedOffset)
+			{
+				addLogRec(this, pos, "Tainted offset");
+			}
 
 
-		var ret,sv,f;
-		if (typeof abase == "string"
-			&& Number.isInteger(aoff)
-			&& aoff < sbase.length)
-		{//is accessing string character
-			f = rule.getStringCharTaint;
+			var ret, sv, f;
+			if (typeof abase == "string"
+				&& Number.isInteger(aoff)
+				&& aoff < sbase.length)
+			{//is accessing string character
+				f = rule.getStringCharTaint;
+			}
+			else if (typeof abase == 'object')
+			{//array & object
+				f = rule.getFieldTaint;
+			}
+			else
+			{
+				return {result: abase[aoff]};
+			}
+			sv = sbase[aoff];
+			ret = abase[aoff];
+			sv = f(sv, soff);
+			val = getTaintResult(ret, sv);
 		}
-		else if (typeof abase == 'object')
-		{//array & object
-			f = rule.getFieldTaint;
-		}
-		else
-		{
-			return {result:abase[aoff]};
-		}
-		sv = sbase[aoff];
-		ret = abase[aoff];
-		sv = f(sv, soff);
-		return {result:getTaintResult(ret, sv)};
+		this.read(iid, undefined, val);
+		return {result:val};
 	};
 	this.putFieldPre = function (iid, base, offset, val)
 	{
@@ -995,6 +1012,8 @@ function TaintAnalysis(rule, config)
 		var abase = actual(base);
 		var sbase = shadow(base);
 		var aoff = actual(offset);
+
+		this.write(iid, undefined, val);
 
 		abase[aoff] = actual(val);//todo, when offset tainted?
 		sbase[aoff] = shadow(val);
@@ -1038,5 +1057,5 @@ function TaintAnalysis(rule, config)
 
 }
 const TaintUnit = sandbox.dtaTaintLogic;
-sandbox.analysis = new TaintAnalysis(new TaintUnit(), config);
+sandbox.analysis = new TaintAnalysis(new TaintUnit(), config, );
 })(J$);

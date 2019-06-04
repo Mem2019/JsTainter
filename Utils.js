@@ -33,7 +33,6 @@ Utils.prototype.fillArray = fillArray;
 Utils.prototype.isNumber = isNumber;
 Utils.prototype.isString = isString;
 Utils.prototype.getTypeName = getTypeName;
-Utils.prototype.assert = require('assert');//todo: node.js
 
 sandbox.dtaUtils = new Utils();
 })(J$);

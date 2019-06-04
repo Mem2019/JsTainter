@@ -33,7 +33,10 @@ TaintUnit.prototype.compressTaint = function (shadow)
 	}
 	else if (Array.isArray(shadow))
 	{
-		ret = shadow.reduce((a, b) => a || b);
+		if (shadow.length === 0)
+			ret = false;
+		else
+			ret = shadow.reduce((a, b) => a || b);
 	}
 	return ret;
 };

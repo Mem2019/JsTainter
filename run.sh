@@ -1,2 +1,3 @@
 #!/bin/sh
-node jalangi2/src/js/commands/jalangi.js --inlineIID --inlineSource --analysis jalangi2/src/js/sample_analyses/ChainedAnalyses.js --analysis jalangi2/src/js/runtime/SMemory.js --analysis jalangi2/src/js/sample_analyses/dlint/Utils.js --analysis DynTaintAnalysis.js tests/test.js
+rm -rf cache/
+mitmdump --quiet --anticache -s "jalangi2/scripts/proxy.py --inlineIID --inlineSource --analysis jalangi2/src/js/sample_analyses/ChainedAnalyses.js --analysis Utils.js --analysis Log.js --analysis TaintLogic.js --analysis Browser.js --analysis DynTaintAnalysis.js"
