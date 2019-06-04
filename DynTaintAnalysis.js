@@ -9,8 +9,7 @@ const Log = sandbox.dtaLog;
 			throw Error("Assertion Error");
 	};
 
-
-	var config = new (function ()
+	function Config()
 	{
 		this.ifTaintNaN = true;
 		this.ifTaintResWhenKeyTaint = false;
@@ -20,8 +19,11 @@ const Log = sandbox.dtaLog;
 		this.logWhenBothTaintCmpOper = true;
 		this.logWhenBitOperTaint = true;
 		this.logWhenTaintedOffset = true;
+		this.logWhenNonFuncBeingCalled = true;
+		this.logWhenTaintFuncBeingCalled = true;
 		this.logAtCond = true;
-	})();
+	}
+	var config = new Config();
 
 
 function TaintAnalysis(rule, config)
@@ -734,9 +736,40 @@ function TaintAnalysis(rule, config)
 	{
 		return {f:f, base:base, args:args, skip:true}
 	};
+
+	function callFunc(f, base, args, isConstructor)
+	{
+		//Log.log('--------'+actual(base));
+		//if (isConstructor)'
+		function newInstance(constructor, args)
+		{//https://stackoverflow.com/questions/3362471/how-can-i-call-a-javascript-constructor-using-call-or-apply
+			var Temp = function(){}, // temporary constructor
+				inst; // other vars
+			// Give the Temp constructor the Constructor's prototype
+			Temp.prototype = constructor.prototype;
+			// Create a new instance
+			inst = new AnnotatedValue(new Temp, {});
+			// Call the original Constructor with the temp
+			// instance as its context (i.e. its 'this' value)
+			var ret = constructor.apply(inst, args);
+			// If an object has been returned then return it otherwise
+			// return the original instance.
+			// (consistent with behaviour of the new operator)
+			return Object(ret) === ret ? ret : inst;
+		}
+		if (isConstructor)
+		{
+			return newInstance(f, args);
+		}
+		else
+		{
+			return f.apply(base, args);
+		}
+	}
 	const actualArgs = (args) => Array.prototype.map.call(args, actual);
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
+		var position = getPosition(iid);
 		const charAtTaint = (ts, idx) =>
 			strToTaintArr(taintArrToStr(ts).charAt(idx), ts);
 		//todo: to remove, for test only
@@ -756,6 +789,20 @@ function TaintAnalysis(rule, config)
 		{
 			Log.log("debug");
 			return {result : undefined};
+		}
+		var af = actual(f);
+		if (typeof af != 'function' && config.logWhenNonFuncBeingCalled)
+		{
+			addLogRec(this, position, "Type other than function being called");
+		}
+		if (af !== f)
+		{
+			if (config.logWhenTaintFuncBeingCalled)
+			{
+				addLogRec(this, position, "Tainted Function (shadow==" +
+					JSON.stringify(shadow(f)) + ") being called");
+			}
+			f = af;
 		}
 		if (Utils.isNative(f))
 		{
@@ -921,33 +968,7 @@ function TaintAnalysis(rule, config)
 		}
 		else
 		{
-			//Log.log('--------'+actual(base));
-			//if (isConstructor)'
-			function newInstance(constructor, args)
-			{//https://stackoverflow.com/questions/3362471/how-can-i-call-a-javascript-constructor-using-call-or-apply
-				var Temp = function(){}, // temporary constructor
-					inst; // other vars
-				// Give the Temp constructor the Constructor's prototype
-				Temp.prototype = constructor.prototype;
-				// Create a new instance
-				inst = new AnnotatedValue(new Temp, {});
-				// Call the original Constructor with the temp
-				// instance as its context (i.e. its 'this' value)
-				ret = constructor.apply(inst, args);
-				// If an object has been returned then return it otherwise
-				// return the original instance.
-				// (consistent with behaviour of the new operator)
-				return Object(ret) === ret ? ret : inst;
-			}
-			if (isConstructor)
-			{
-				return {result:newInstance(f, args)};
-			}
-			else
-			{
-				return {result:f.apply(base, args)};
-			}
-
+			return {result:callFunc(f, base, args, isConstructor)};
 		}
 	};
 	this.getFieldPre = function(iid, base, offset)
