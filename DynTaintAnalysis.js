@@ -736,7 +736,6 @@ function TaintAnalysis(rule, config)
 	{
 		return {f:f, base:base, args:args, skip:true}
 	};
-
 	function callFunc(f, base, args, isConstructor)
 	{
 		//Log.log('--------'+actual(base));
@@ -772,6 +771,7 @@ function TaintAnalysis(rule, config)
 		var position = getPosition(iid);
 		const charAtTaint = (ts, idx) =>
 			strToTaintArr(taintArrToStr(ts).charAt(idx), ts);
+		const callFun = sandbox.callFunExport;
 		//todo: to remove, for test only
 		if (f === 'assertTaint')
 		{
@@ -821,7 +821,7 @@ function TaintAnalysis(rule, config)
 				//todo: maybe there is better way
 				aargs = actualArgs(args);
 				abase = actual(base);
-				ret = callFunc(f, abase, aargs, isConstructor);
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 				const sliceTaint = (ts, idx, len) =>
 					strToTaintArr(taintArrToStr(ts).
 					substr(idx, len), ts);
@@ -835,14 +835,14 @@ function TaintAnalysis(rule, config)
 					sv = rule.compressTaint(shadow(args[0]));
 				}
 				aargs = actualArgs(args);
-				ret = callFunc(f, base, aargs, isConstructor);
+				ret = callFun(f, base, aargs, isConstructor, iid);
 			}
 			break;
 			case String.prototype.charAt:
 			{
 				aargs = actualArgs(args);
 				abase = actual(base);
-				ret = callFunc(f, abase, aargs, isConstructor);
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 				sv = charAtTaint(getTaintArray(base), aargs[0]);
 				//todo: what if index is tainted
 			}
@@ -851,7 +851,7 @@ function TaintAnalysis(rule, config)
 			{
 				aargs = actualArgs(args);
 				abase = actual(base);
-				ret = callFunc(f, abase, aargs, isConstructor);
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 
 				sv = rule.ordTaint(charAtTaint(getTaintArray(base), aargs[0]));
 				//when taint array length == 0, sv == undefined, which gives no taint
@@ -866,14 +866,14 @@ function TaintAnalysis(rule, config)
 						shadow(args[0], rule.noTaint)));
 				}
 				aargs = actualArgs(args);
-				ret = callFunc(f, base, aargs, isConstructor);
+				ret = callFun(f, base, aargs, isConstructor, iid);
 			}
 			break;
 			case String.prototype.concat:
 			{
 				aargs = actualArgs(args);
 				abase = actual(base);
-				ret = callFunc(f, abase, aargs, isConstructor);
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 				sv = Array.prototype.concat.apply(
 					getTaintArray(base, rule),
 					Array.prototype.map.call(args,(a) => getTaintArray(a, rule)));
@@ -891,7 +891,7 @@ function TaintAnalysis(rule, config)
 			{
 				taints = getTaintArray(args[0]);
 				abase = actual(args[0]);
-				ret = callFunc(f, base, [abase], isConstructor);
+				ret = callFun(f, base, [abase], isConstructor, iid);
 				sv = [];
 				var j = 0;
 				for (var i = 0; i < taints.length; i++)
@@ -931,7 +931,7 @@ function TaintAnalysis(rule, config)
 					throw TypeError("Number.prototype.toString is not generic");
 				aargs = actualArgs(args);
 
-				rule.toStringTaint(base, shadow(base), (a) => callFunc(f, a, aargs, isConstructor));
+				rule.toStringTaint(base, shadow(base), (a) => callFun(f, a, aargs, isConstructor, iid));
 			}
 			break;
 			case String.prototype.indexOf:
@@ -939,7 +939,7 @@ function TaintAnalysis(rule, config)
 				aargs = actualArgs(args);
 				var baseTaintArr = getTaintArray(base);
 				var argTaintArr = getTaintArray(args[0]);
-				ret = callFunc(f, actual(base), aargs, isConstructor);
+				ret = callFun(f, actual(base), aargs, isConstructor, iid);
 				var a1 = actual(args[1]);
 				var startIdx = a1 < 0 || typeof a1 == 'undefined' ? 0 : a1;
 
@@ -950,14 +950,14 @@ function TaintAnalysis(rule, config)
 			break;
 			case Array.prototype.push:
 			{
-				ret = callFunc(f, base, args, isConstructor);
+				ret = callFun(f, base, args, isConstructor, iid);
 			}
 			break;
 			default:
 			{
 				aargs = actualArgs(args);
 				abase = actual(base);
-				ret = callFunc(f, abase, aargs, isConstructor);
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 			}
 			break;
 			}
@@ -968,7 +968,7 @@ function TaintAnalysis(rule, config)
 		}
 		else
 		{
-			return {result:callFunc(f, base, args, isConstructor)};
+			return {result:callFunc(f, base, args, isConstructor, iid)};
 		}
 	};
 	this.getFieldPre = function(iid, base, offset)
