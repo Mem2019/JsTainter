@@ -929,12 +929,12 @@ Note that these 2 pieces of codes are in different files. The first code piece i
 
 1. try to run it successfully in browser, 
 
-   ​	handle the browser case taint (source and sink), add different source taint analysis
+   ​	handle the browser case taint (source and sink), add multiple sources taint analysis
 
 3. find the case where it is commonly used but not properly handled and modify, including Jalangi2 and JsTainter
 
    ​	e.g. `const` and `lambda` bug in Jalangi2, some more native functions that are common
 
-4. run it successfully with better accuracy, finish report & evaluation
+4. so run it successfully with better accuracy, finish report & evaluation
 
 5. extension: visualization, taint level, symbolic execution, `instrumentCodePre` to anti-anti-instrumentation, etc...

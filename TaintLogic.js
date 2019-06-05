@@ -89,6 +89,6 @@ TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startId
 	ret = false;
 	return ret;
 };
-sandbox.dtaTaintLogic = TaintUnit;
+sandbox.dtaTaintLogic = new TaintUnit();
 })(J$);
 //todo, make it an array of boolean

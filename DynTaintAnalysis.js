@@ -368,18 +368,20 @@ function TaintAnalysis(rule, config)
 
 	function getPosition(iid)
 	{
+		debugger;
 		var ret = sandbox.iidToLocation(
 			sandbox.getGlobalIID(iid));
-		var idx;
-		while (true)
-		{
-			idx = ret.indexOf('/');
-			if (idx < 0)
-				break;
-			ret = ret.substr(idx + 1);
-		}
-		if (ret[ret.length - 1] === ')')
-			return ret.substr(0, ret.length - 1);
+		return ret;
+		// var idx;
+		// while (true)
+		// {
+		// 	idx = ret.indexOf('/');
+		// 	if (idx < 0)
+		// 		break;
+		// 	ret = ret.substr(idx + 1);
+		// }
+		// if (ret[ret.length - 1] === ')')
+		// 	return ret.substr(0, ret.length - 1);
 	}
 
 	function taintAllH(val, outArrs)
@@ -806,9 +808,13 @@ function TaintAnalysis(rule, config)
 		}
 		if (Utils.isNative(f))
 		{
-			var strippedArgs, strippedBase;
 			var aargs, abase;
 			var sv, ret, taints;
+			ret = sandbox.dtaBrowser.invokeFun(f, actual(base), actualArgs(args));
+			if (typeof ret != 'undefined')
+			{
+				return getTaintResult(ret.ret, ret.sv);
+			}
 			switch (f)
 			{
 			case Function.prototype.apply:
@@ -1077,6 +1083,6 @@ function TaintAnalysis(rule, config)
 	}
 
 }
-const TaintUnit = sandbox.dtaTaintLogic;
-sandbox.analysis = new TaintAnalysis(new TaintUnit(), config, );
+const taintUnit = sandbox.dtaTaintLogic;
+sandbox.analysis = new TaintAnalysis(taintUnit, config);
 })(J$);
