@@ -1,5 +1,5 @@
 (function (sandbox) {
-function Browser(){}
+function Browser(){}//todo : putField, native functions
 Browser.prototype.getField = function (base, offset)
 {
 	if (base === window.location)

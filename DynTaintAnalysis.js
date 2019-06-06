@@ -961,6 +961,10 @@ function TaintAnalysis(rule, config)
 			break;
 			default:
 			{
+				if (config.logForUnprocNativeFunc)
+				{
+					addLogRec(this, position, "Unhandled native function " + f.name);
+				}
 				aargs = actualArgs(args);
 				abase = actual(base);
 				ret = callFun(f, abase, aargs, isConstructor, iid);

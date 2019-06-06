@@ -13,7 +13,7 @@ Unlike binary program, whose behavior is simple and easy to analysis, JavaScript
 
 ## Overview
 
-[`Jalangi2`](https://github.com/Samsung/jalangi2) is a dynamic analysis framework for JavaScript that supports instrumentation analysis. This framework can modify the source code of the program being analyzed and instrument code before and after each JavaScript operation. For example, before and after any JavaScript binary operators (e.g. `+`), we can instrument our own functions to inspect and modify the behavior of such operation. Since this framework has already implemented language-level preprocessing such parsing and instrumentation, developer who uses this framework does not have to worry about it. Instead, according to its [tutorial](https://manu.sridharan.net/files/JalangiTutorial.pdf), it is very easy to use this framework. Here is an example that instrument on the `binary` operator in JavaScript.
+[`Jalangi2`](https://github.com/Samsung/jalangi2) is a dynamic analysis framework for JavaScript that supports dynamic analysis based on instrumentation. This framework can modify the source code of the program being analyzed and instrument code before and after each JavaScript operation. For example, before and after any JavaScript binary operators (e.g. `+`), user of Jalangi2 can instrument his own functions to inspect and modify the behavior of such operation. Since this framework has already implemented language-level preprocessing such parsing and instrumentation, developer who uses this framework does not have to worry about it. Instead, according to its [tutorial](https://manu.sridharan.net/files/JalangiTutorial.pdf), it is very easy to use this framework. Here is an example that instrument on the `binary` operator in JavaScript.
 
 ```javascript
 //Analysis.js
@@ -28,9 +28,51 @@ sandbox.analysis = new Analysis();
 })(J$);
 ```
 
-By setting these fields to the function we want, when binary operator such as `+` is executed, our functions will also be executed. The relative argument such as operands will be passed as argument, and we can also use return value of these functions to modify the behavior of the binary operator such as changing the result. 
+By setting these fields to the function we want, when binary operator such as `+` is executed, our functions will also be executed. The relative argument such as operands will be passed as argument, and we can also use return value of these functions to modify the dynamic behavior of the binary operator such as changing the result. 
 
-Then run `Jalangi2` framework using `nodejs`, passing `Analysis.js` and JavaScript program to be analyzed as argument to run the analysis. 
+### Instrumentation
+
+As I just suggested, Jalangi2 works by source code level instrumentation. The input JavaScript source will be converted to instrumented JavaScript, which will then be run by the JavaScript interpreter. Since the instrumented JavaScript will call the callback functions that we have defined (e.g. `binaryPre` shown above), analysis can be performed by every possible JavaScript operation.
+
+In Jalangi2, every operation will be wrapped by a member function of `J$`, and this class can be regarded as the *main class* of Jalangi2. For example, binary operation would be wrapped by `J$.B`, and in this function, our instrumentation callback function is called and actual binary operation are performed. These functions not only wrap the operation but also are placed before or after some JavaScript statement. For example, `J$.Se` is placed before JavaScript file, and `J$.Fe` is placed before function body. In these functions our corresponding callbacks will also be called, if any. 
+
+### J$
+
+As I suggested above, this is the main class of Jalangi2. The `analysis` property need to be assigned by us, just as the example above shown. In addition, this class would be shared among all chained analysis file, and this feature can be used to export class. For example, I have implemented a `Utils` class that contains some utility functions. Since this is implemented in a separate file, we cannot use this class in another file. However, by using `J$`, we can easily export this class, as illustrated below.
+
+```javascript
+//Utils.js
+(function (sandbox)
+{
+	Utils.prototype.func2 = function() {...};
+	Utils.prototype.func1 = function() {...};
+	//define func1 and func2
+	sandbox.myUtils = new Utils();
+})(J$);
+//Analysis.js
+(function (sandbox)
+{
+	const utils = sandbox.myUtils;
+	function Analysis()
+	{
+		// ...
+		utils.func1(...); // use func1 somewhere
+		utils.func2(...); // use func2 somewhere
+		// ...
+	}
+	sandbox.analysis = new Analysis();
+})(J$);
+```
+
+### Run
+
+Here is the bash command that run the analysis. `ChainedAnalyses.js` is critical since it is the script that chains everything together.
+
+```bash
+node jalangi2/src/js/commands/jalangi.js --inlineIID --inlineSource --analysis jalangi2/src/js/sample_analyses/ChainedAnalyses.js --analysis Utils.js --analysis Analysis.js file_to_be_analyzed.js
+```
+
+
 
 Here is the full list of the JavaScript operations that can be instrumented, which already cover all possible JavaScript program behaviors.
 
@@ -122,6 +164,59 @@ However, such operation is still not perfectly correct. For example, `actual([An
 ## Location
 
 Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being instrumented, where `J$` is a global variable used by `Jalangi2`. The returned position is a string, with format `[absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number]`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2.
+
+## Bugs
+
+Even if Jalangi2 is an great framework, it has some bugs since it has not been maintained for 3 years. Therefore, I have modified some codes in Jalangi2 to fix some bugs.
+
+### Constant Declaration
+
+**Cause**
+
+In JavaScript, developer can declare a constant that cannot be modified once being assigned by `const a = something`. However, we cannot access the variable before this statement.
+
+```javascript
+alert(a); 
+//cause ReferenceError instead of returning `undefined`
+const a = 1 + f(a); // this also causes ReferenceError 
+```
+
+In the code, variable `a` are used before declaration and assignment, which causes `ReferenceError`. This JavaScript feature leads to a bug in Jalangi2, which is caused by improper instrumentation. The bug is triggered when any constant declaration is instrumented by Jalangi2, for example `const x = "1"`. When this declaration is instrumented, following instrumented JavaScript will be generated.
+
+```javascript
+J$.N(41, 'x', x, 0); // x is used before statement `const x`
+const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), x, 3)); // x is also used here
+```
+
+As I mentioned in last section, `J$` is the main class of Jalangi2, and its member functions are called. However, the problem is that variable `x` is used before it is actually declared, which causes `ReferenceError` when the instrumented version is run. 
+
+By the way, declaration like `var a = a` (where `a` has not been declared before) will not cause this problem and `a` will equal to `undefined` after this statement, and this is the reason why `var` declaration does not raise this error.
+
+**Fix**
+
+My approach to fix this error is very simple. The reason why instrumented version of JavaScript file access the variable before declaration is to obtain the original value of the variable, as the documentation of Jalangi2 suggests. However, this functionality is not actually very useful, at least not useful for my project. Therefore, if we can prevent such early access of variable (e.g. change that argument to something else), the `ReferenceError` can be prevented. To be specific, we need to change `x` passed as argument in both `J$.N` and `J$.W`.
+
+In Jalangi2, file `src/js/instrument/esnstrument.js` implements JavaScript source code instrumentation, and we need to find the piece of codes that generates the instrumented JavaScript, and modify the arguments that cause error. The idea is that when the corresponding instrumented code in string form is generated, method name `".N"` and `".W"` must be referenced, so I decided search such string in that file, and these 2 lines are interesting and possibly relate to instrumented code generation.
+
+```javascript
+var logInitFunName = JALANGI_VAR + ".N";
+var logWriteFunName = JALANGI_VAR + ".W";
+```
+
+We may need to debug the Jalangi2 to make things more clear, so I have used a shortest code that generate the `ReferenceError`, namely `const x = "1"`, to be instrumented. By setting the break point, we can easily find that `JALANGI_VAR` equals to `"J$"`. Then after looking for the cross reference, these variables are used in this way, which is very likely to be instrumented code generation. There are several pieces of codes like this, but they are essentially same, so I will only show and explain one of them here.
+
+```javascript
+logInitFunName + "(" + RP + "1, " + RP + "2, " + RP + "3, " + ... 
+```
+
+However, if I set a breakpoint here, I found that value of `RP` equals to `"J$_"`, so the result of string concatenation is something like `"J$.N(J$_1, J$_2, J$_3, 0)"` which is not same as result instrumented code. However, this result will be passed to function `replaceInStatement`, which I think is the function that replaces the `J$_X` by the real argument. However, this is not important, the arguments can already be modified now although a bit hack: `J$_3` corresponds to the third argument `x` that causes `ReferenceError`, so we modify it to something else such as `J$_2`, so the third argument will become `'x'` now. The same thing applies for all other references of `logInitFunName` and `logWriteFunName`. After modifying Jalangi2 code, the instrumented codes become this, in which all `x`s are replaced by `'x'`.
+
+```javascript
+J$.N(41, 'x', 'x', 0);
+const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), 'x', 3));
+```
+
+
 
 # Overall Design
 
