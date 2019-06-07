@@ -16,7 +16,56 @@ The `ChainedAnalyses.js` is a JavaScript file that chain the analysis together a
 
 ## Browser.js
 
-Different from `node.js`, there are many DOM APIs when JavaScript is run in browser, including some native functions and some global objects. I will especially take care about `Sources` and `Sinks`. `Sources` are where the user input can be obtained: for example, user input can come from `window.location.hash`, which is part of the URL and can be controlled by user; and user input can also come from native function used to get input such as `prompt`, which pops a window and get the input from user. `Sinks` are some important APIs that analyzer might want to note about when its argument can be controlled by user: for example, web page can modify the HTML content of DOM object by setting field `.innerHTML`; web page can also use `XMLHttpRequest` to send package. If the contents being used for the operations are tainted, analyzer might be interested about that so `JsTainter` may need to record such information.  
+Different from `node.js`, there are many DOM APIs when JavaScript is run in browser, including some native functions and some global objects. I will especially take care about `Sources` and `Sinks`. `Sources` are where the user input can be obtained: for example, user input can come from `window.location.hash`, which is part of the URL and can be controlled by user; and user input can also come from native function used to get input such as `prompt`, which pops a window and get the input from user. `Sinks` are some important APIs that analyzer might want to note about when its argument can be controlled by user: for example, web page can modify the HTML content of DOM object by setting field `.innerHTML`; web page can also use `XMLHttpRequest` to send package. If the contents being used for the operations are tainted, analyzer might be interested about such information, so `JsTainter` may need to record when a tainted variable is passed into them.
+
+Therefore, the reason why this file exists is to write some browser specific code that processes the `Source` and `Sink` and to separate it from the dynamic taint analysis algorithm codes. The advantage for this is that I want my code to be still runnable on `node.js` for more convenient testing, and if we just simply put everything together (e.i. put the browser logic into `DynTaintAnalysis.js`), it will not only be bad software engineering design, but might also cause `ReferenceError` exception since global DOM object variable is not defined in `node.js`. 
+
+Nonetheless, in `DynTaintAnalysis.js`, the `dtaBrowser` field of `J$`, which is used to export `Browser` object, will still be accessed, so my way to solve this problem is to have a `NullBrowser` object for `node.js` that basically perform nothing except the methods are defined so no `Error` will be thrown. To be specific, in the command line of running this in `node.js`, `--analysis Browser.js` is changed to `--analysis NullBrowser.js`. This piece of code may illustrate the idea better.
+
+```javascript
+//Browser.js
+(function (sandbox) {
+function Browser(){}
+Browser.prototype.getField = function (base, offset)
+{
+	//process DOM global object get field operation...
+	//e.g. window.location.hash
+};
+Browser.prototype.invokeFun = function (f, abase, args)
+{
+	//process DOM native function call...
+	//e.g. prompt
+};
+//process other DOM-related operations...
+sandbox.dtaBrowser = new Browser();
+})(J$);
+
+//NullBrowser.js
+(function (sandbox) {
+function Browser(){}
+Browser.prototype.getField = function () {};
+Browser.prototype.invokeFun = function () {};
+//other DOM-related operations are also dummy functions...
+sandbox.dtaBrowser = new Browser();
+})(J$);
+```
+
+When the relative taint analysis is performed, the method in `Browser` will be called first, and if it returns `undefined`, normal handling will be performed; if not, which means the operation is DOM-related and has already been handled, so analysis function will return directly. For example, here is how `dtaBrowser.getField` is called in `analysis.getField`.
+
+```javascript
+ret = sandbox.dtaBrowser.getField(abase, aoff);
+if (typeof ret != 'undefined')
+{
+	//`ret` is the result, if is not `undefined`
+	return new AnnotatedValue(ret.ret, ret.sv);
+}
+else
+{
+	// normal getField handling
+}
+```
+
+### 
 
 # Browser Extension Todos
 

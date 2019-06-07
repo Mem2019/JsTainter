@@ -8,9 +8,9 @@ Browser.prototype.getField = function (base, offset)
 		{
 		case "hash":
 		case "search":
-			return sandbox.dtaUtils.fillArray(
+			return {ret:base[off], sv:sandbox.dtaUtils.fillArray(
 					sandbox.dtaTaintLogic.fullTaint,
-					base[offset].length);
+					base[offset].length)};
 		//todo: case "href":
 		}
 	}

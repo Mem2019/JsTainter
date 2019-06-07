@@ -27,12 +27,22 @@ function getTypeName(v)
 	return v.constructor.name;
 }
 
+function getPropertyObj(obj, prop)
+{
+	if (typeof obj[prop] == 'undefined')
+	{
+		obj[prop] = {};
+	}
+	return obj[prop];
+}
+
 function Utils(){}
 Utils.prototype.isNative = isNative;
 Utils.prototype.fillArray = fillArray;
 Utils.prototype.isNumber = isNumber;
 Utils.prototype.isString = isString;
 Utils.prototype.getTypeName = getTypeName;
+Utils.prototype.getPropertyObj = getPropertyObj;
 
 sandbox.dtaUtils = new Utils();
 })(J$);

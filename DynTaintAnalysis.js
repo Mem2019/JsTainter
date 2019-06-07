@@ -33,13 +33,15 @@ function TaintAnalysis(rule, config)
 	this.logRec = {};
 	const addLogRec = function(analysis, pos, msg)
 	{
-		if (typeof analysis.logRec[pos] == 'undefined')
+		var fileObj = Utils.getPropertyObj(analysis.logRec, pos.fname);
+		assert(typeof pos.pos !== 'undefined');
+		if (typeof fileObj.logRec[pos] == 'undefined')
 		{
-			analysis.logRec[pos] = [msg];
+			fileObj.logRec[pos] = [msg];
 		}
 		else
 		{
-			analysis.logRec[pos].push(msg);
+			fileObj.logRec[pos].push(msg);
 		}
 	};
 	function AnnotatedValue(val, shadow)
@@ -985,15 +987,6 @@ function TaintAnalysis(rule, config)
 	{
 		return {base:base, offset:offset, skip:true};
 	};
-	function browserGetField(base, offset)
-	{
-		if (typeof sandbox.dtaBrowser != 'undefined')
-		{
-			var ret = sandbox.dtaBrowser.getField(base, offset);
-			if (typeof ret != 'undefined')
-				return new AnnotatedValue(base[offset], ret);
-		}
-	}
 	this.getField = function (iid, base, offset)
 	{
 		var pos = getPosition(iid);
@@ -1001,17 +994,21 @@ function TaintAnalysis(rule, config)
 		var aoff = actual(offset);
 		var soff = shadow(offset);
 		var sbase = shadow(base);
+		var ret;
 
-		var val = browserGetField(abase, aoff);
-		if (typeof val == 'undefined')
+		if (isTainted(soff) && config.logWhenTaintedOffset)
 		{
-			if (isTainted(soff) && config.logWhenTaintedOffset)
-			{
-				addLogRec(this, pos, "Tainted offset");
-			}
+			addLogRec(this, pos, "Tainted offset");
+		}
 
-
-			var ret, sv, f;
+		ret = sandbox.dtaBrowser.getField(abase, aoff);
+		if (typeof ret != 'undefined')
+		{
+			return new AnnotatedValue(ret.ret, ret.sv);
+		}
+		else
+		{
+			var sv, f;
 			if (typeof abase == "string"
 				&& Number.isInteger(aoff)
 				&& aoff < sbase.length)
@@ -1029,10 +1026,10 @@ function TaintAnalysis(rule, config)
 			sv = sbase[aoff];
 			ret = abase[aoff];
 			sv = f(sv, soff);
-			val = getTaintResult(ret, sv);
+			ret = getTaintResult(ret, sv);
 		}
-		this.read(iid, undefined, val);
-		return {result:val};
+		this.read(iid, undefined, ret);
+		return {result:ret};
 	};
 	this.putFieldPre = function (iid, base, offset, val)
 	{
