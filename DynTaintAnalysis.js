@@ -28,21 +28,12 @@ const Log = sandbox.dtaLog;
 
 function TaintAnalysis(rule, config)
 {
-	this.readRec = {};
-	this.writeRec = {};
-	this.logRec = {};
+	this.results = [];
 	const addLogRec = function(analysis, pos, msg)
 	{
-		var fileObj = Utils.getPropertyObj(analysis.logRec, pos.fname);
 		assert(typeof pos.pos !== 'undefined');
-		if (typeof fileObj.logRec[pos] == 'undefined')
-		{
-			fileObj.logRec[pos] = [msg];
-		}
-		else
-		{
-			fileObj.logRec[pos].push(msg);
-		}
+		analysis.results = analysis.results.concat(
+			{type: 'log', file: pos.fname, pos: pos.pos, msg: msg});
 	};
 	function AnnotatedValue(val, shadow)
 	{
@@ -370,7 +361,6 @@ function TaintAnalysis(rule, config)
 
 	function getPosition(iid)
 	{
-		debugger;
 		var ret = sandbox.iidToLocation(
 			sandbox.getGlobalIID(iid));
 		return ret;
@@ -732,9 +722,13 @@ function TaintAnalysis(rule, config)
 	};
 	this.endExecution = function()
 	{
-		Log.log(JSON.stringify(this.readRec));
-		Log.log(JSON.stringify(this.writeRec));
-		Log.log(JSON.stringify(this.logRec));
+		var res = "";
+		for (var i = 0; i < this.results.length; i++)
+		{
+			res += JSON.stringify(this.results[i]);
+			res += '\n';
+		}
+		Log.log(res);
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -1028,7 +1022,7 @@ function TaintAnalysis(rule, config)
 			sv = f(sv, soff);
 			ret = getTaintResult(ret, sv);
 		}
-		this.read(iid, undefined, ret);
+		this.read(iid, String(aoff), ret);
 		return {result:ret};
 	};
 	this.putFieldPre = function (iid, base, offset, val)
@@ -1041,7 +1035,7 @@ function TaintAnalysis(rule, config)
 		var sbase = shadow(base);
 		var aoff = actual(offset);
 
-		this.write(iid, undefined, val);
+		this.write(iid, String(aoff), val);
 
 		abase[aoff] = actual(val);//todo, when offset tainted?
 		sbase[aoff] = shadow(val);
@@ -1068,19 +1062,32 @@ function TaintAnalysis(rule, config)
 		return {result:ret};
 		//return that newly created object
 	};
+	function rwRec(analysis, pos, name, val, rw)
+	{
+		var sv = actual(val);
+		var typeOf = typeof sv;
+		if (typeOf !== 'string' && typeOf !== 'object')
+			typeOf = 'basic';
+		analysis.results = analysis.results.concat(
+			{type: rw, typeOf: typeOf,
+			file: pos.fname, pos: pos.pos,
+			name: name});
+	}
 	this.read = function (iid, name, val)
 	{
 		var pos = getPosition(iid);
 		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-			this.readRec[pos] =  typeof this.readRec[pos] == 'undefined' ?
-				1 : this.readRec[pos] + 1;
+		{
+			rwRec(this, pos, name, val, 'read');
+		}
 	};
 	this.write = function (iid, name, val)
 	{
 		var pos = getPosition(iid);
 		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-			this.writeRec[pos] = typeof this.writeRec[pos] == 'undefined' ?
-				1 : this.writeRec[pos] + 1;
+		{
+			rwRec(this, pos, name, val, 'write');
+		}
 	}
 
 }
