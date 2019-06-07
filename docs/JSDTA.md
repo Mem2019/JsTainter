@@ -165,7 +165,7 @@ However, such operation is still not perfectly correct. For example, `actual([An
 
 Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being instrumented, where `J$` is a global variable used by `Jalangi2`. The returned position is a string, with format `[absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number]`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2.
 
-## Bugs
+## Bug
 
 Even if Jalangi2 is an great framework, it has some bugs since it has not been maintained for 3 years. Therefore, I have modified some codes in Jalangi2 to fix some bugs.
 
@@ -209,7 +209,7 @@ We may need to debug the Jalangi2 to make things more clear, so I have used a sh
 logInitFunName + "(" + RP + "1, " + RP + "2, " + RP + "3, " + ... 
 ```
 
-However, if I set a breakpoint here, I found that value of `RP` equals to `"J$_"`, so the result of string concatenation is something like `"J$.N(J$_1, J$_2, J$_3, 0)"` which is not same as result instrumented code. However, this result will be passed to function `replaceInStatement`, which I think is the function that replaces the `J$_X` by the real argument. However, this is not important, the arguments can already be modified now although a bit hack: `J$_3` corresponds to the third argument `x` that causes `ReferenceError`, so we modify it to something else such as `J$_2`, so the third argument will become `'x'` now. The same thing applies for all other references of `logInitFunName` and `logWriteFunName`. After modifying Jalangi2 code, the instrumented codes become this, in which all `x`s are replaced by `'x'`.
+However, if I set a breakpoint here, I found that value of `RP` equals to `"J$_"`, so the result of string concatenation is something like `"J$.N(J$_1, J$_2, J$_3, 0)"` which is not same as result instrumented code. However, this result will be passed to function `replaceInStatement`, which I think is the function that replaces the `J$_X` by the real argument. However, this is not important, the arguments can already be modified now although a bit hack: `J$_3` corresponds to the third argument `x` that causes `ReferenceError`, so we modify it to something else such as `J$_2`, so the third argument will become `'x'` now. The same thing applies for all other references of `logInitFunName` and `logWriteFunName`. This is the instrumented codes after modifying Jalangi2 code, in which all `x`s are replaced by `'x'`.
 
 ```javascript
 J$.N(41, 'x', 'x', 0);
@@ -1020,16 +1020,4 @@ Note that these 2 pieces of codes are in different files. The first code piece i
 
 3. 
 
-# Browser Extension Todos
-
-1. try to run it successfully in browser, 
-
-   ​	handle the browser case taint (source and sink), add multiple sources taint analysis
-
-3. find the case where it is commonly used but not properly handled and modify, including Jalangi2 and JsTainter
-
-   ​	e.g. `const` and `lambda` bug in Jalangi2, some more native functions that are common
-
-4. so run it successfully with better accuracy, finish report & evaluation
-
-5. extension: visualization, taint level, symbolic execution, `instrumentCodePre` to anti-anti-instrumentation, etc...
+5. 

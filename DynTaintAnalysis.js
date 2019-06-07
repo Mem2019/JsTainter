@@ -156,7 +156,7 @@ function TaintAnalysis(rule, config)
 				{
 					ret = ret.concat(getTaintArrayH(arr[i], outArrs));
 				}
-				ret = ret.concat(false);//',' is not tainted
+				ret = ret.concat(rule.noTaint);//',' is not tainted
 			}
 			if (isSolidStrInArr(actual(arr[i]), outArrs))
 			{
