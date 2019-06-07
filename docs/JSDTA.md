@@ -163,7 +163,45 @@ However, such operation is still not perfectly correct. For example, `actual([An
 
 ## Location
 
-Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being instrumented, where `J$` is a global variable used by `Jalangi2`. The returned position is a string, with format `[absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number]`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2.
+Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being analyzed in the original codes, where `J$` is a global variable used by `Jalangi2`. 
+
+The returned position is a string, with format `([absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number])` in `node.js`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2. We can use such position string to identify the position of a particular instruction in original codes.
+
+However, when instrumentation is run in browser, position with different format appears, after reading the source codes of Jalangi2, I found this piece of code that generates the position string in `iidToLocation.js`.
+
+```javascript
+arr = ret[iid];
+if (arr) {
+	if (sandbox.Results) {
+		return "<a href=\"javascript:iidToDisplayCodeLocation('"+gid+ \
+			"');\">(" + fname + ":" + arr[0] + ":" + arr[1] + \
+			":" + arr[2] + ":" + arr[3] + ")</a>";
+	} else {
+		return "(" + fname + ":" + \
+			arr[0] + ":" + arr[1] + ":" + \
+			arr[2] + ":" + arr[3] + ")";
+	}
+} else {
+	return "(" + fname + ":iid" + iid + ")";
+}
+```
+
+Therefore, as shown above, there are 3 kinds of position string format: the first one gives `gid`, file name and information about line and column; the second one does not gives `gid` but still gives file name and information about line and column, which is the format that I have illustrated above; and the third one only gives file name and `iid`, because `arr` that should contains information about line and column now is `undefined`. During my project I have not encountered the third case, so I think that one is a bit unrelated to the project. As for the other 2 cases, although what Jalangi2 chooses to provide is a string, what I need is actually these variables used to generate this string. Thus, instead of obtaining such string and parse it back by my myself, I would choose to modify the code of Jalangi2 to make `iidToLocation` return a JSON instead of a string. Here is the modified version of code.
+
+```javascript
+arr = ret[iid];
+if (arr) {
+	if (sandbox.Results) {
+		return {gid:gid, fname:fname, pos:arr};
+	} else {
+		return {fname:fname, pos:arr};
+	}
+} else {
+	return {fname: fname, iid:iid};
+}
+```
+
+The information being returned is exactly same, except now the form is in JSON instead of a string.
 
 ## Bug
 

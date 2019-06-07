@@ -65,8 +65,6 @@ else
 }
 ```
 
-### 
-
 # Browser Extension Todos
 
 1. try to run it successfully in browser, 
