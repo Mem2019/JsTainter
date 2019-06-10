@@ -25,7 +25,13 @@ Therefore, using debug protocol is too risky and not appropriate for my project.
 
 ## Modifying JavaScript Engine for Analysis
 
-Since JavaScript is always executed by JavaScript engine, we can modify 
+Since JavaScript is always executed by JavaScript engine, we can modify the code of JavaScript engine for dynamic analysis. However, here are several problems.
+
+**Firstly**, if analysis is performed in this way, user must use modified version of browser, which is too heavy compared to a  browser extension. In addition, the product will heavily bond to specific browser, so there would be no portability at all.
+
+**Secondly**, such implementation is hard. I need to understand JavaScript engine in advance before modifying its code, which might take long. Also, JavaScript is not only executed by interpreter, but it will also be compiled just-in-time when a section of codes is executed very frequently. This could make things very complicated since I would also need to modify the JIT compiler so that I can still analyze codes even if they are compiled in JIT, in order to prevent some false negatives.
+
+Therefore, the cumbersomeness and difficulty of this approach suggests this is not a good way.
 
 ## Instrumentation
 
