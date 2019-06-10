@@ -336,11 +336,19 @@ However, tracing at bit level is expensive and unnecessary. Cases like the examp
 
 ### Taint Level
 
-This is an "soft" version of boolean variable. Unlike //todo
+This is an "soft" version of boolean variable. Unlike boolean variable which can only be `true` or `false`, tainted level is a floating point number that range from 0 to 1. Value 1 means the variable along with this shadow value is fully tainted. In other word, the variable can be fully controlled by user. Value 0 means the variable is not tainted and cannot be controlled by user. The value in between means the variable can be controlled by user, but cannot be fully controlled by user. 
+
+For example, there is a number with taint level 1, say `AnnotatedValue(1337, 1.0)`, and is converted to string, so the result is `"1337"`. However, what taint information variable should I assign to each character? If a boolean strategy is used, they are all `true`, which makes sense but is not completely accurate, because user can only control the string within the range `'0'-'9'`, and this is different from a string that can be fully controlled. This is where `taint level` comes, the taint level for this string should be somewhere between 0 and 1.
+
+Nonetheless, specific rule for this strategy need more investigation: for example, what specific formula should be applied to calculate taint level as the tainted variable propagates? The details can give rise to many problems, so this strategy should be regard as extension.
 
 ### Symbolic Expression
 
-This is actually not about taint analysis but about symbolic execution. //todo
+This is actually not about taint analysis but about symbolic execution. Instead of just recording a state of taint, whole expression is traced. I have covered some of this when [this paper](todo) is discussed in background section. 
+
+However, different from normal symbolic execution which will result in multiple states when a symbolic expression is used in conditional jumps, my current code does not support such multiple states, because different implementation of taint variable is simply different implementation of `dtaTaintLogic` field in `J$`. The main taint analysis logic in `DynTaintAnalysis.js` does not vary as the implementation of taint information variable changes, and this file is not designed to have multiple states. 
+
+Therefore, current strategy could only be to log the expression on both sides when a symbolic expression is used in conditional jumps.
 
 ## Shadow Value for Different Types
 

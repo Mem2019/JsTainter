@@ -6,7 +6,10 @@
 		this.config = config;
 	}
 	TaintUnit.prototype.noTaint = 0;
-	TaintUnit.prototype.fullTaint = true;//todo
+	TaintUnit.prototype.taintSource = function (id)
+	{
+		return 1 << id;
+	};
 	TaintUnit.prototype.arithmetic = function(left, right, op, pos)
 	{
 		return left | right;
