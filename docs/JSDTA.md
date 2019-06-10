@@ -9,6 +9,38 @@ categories: jekyll update
 
 Unlike binary program, whose behavior is simple and easy to analysis, JavaScript is highly dynamic and very complex, thus hard to analysis. I will cover possible implementations of data structure of shadow value along with JavaScript variable, and their pros and cons. Also, here is some of my reflection about the cases that we need to consider when implementing dynamic taint analysis for JavaScript, possible ways to deal with them, and the drawbacks of these approaches.
 
+# Dynamic Analysis
+
+To perform dynamic taint analysis, we must be able to track and analyze every possible JavaScript operation, otherwise it is possible to miss some critical operations and produce false positive or false negative results. It is also required to trace information between operations, otherwise taint flow cannot be traced at all. When I was preparing the project, I found several possible ways that dynamic analysis can be performed. 
+
+## Debug Protocol
+
+The debug protocol is designed for remote debugger: for example, JavaScript IDE uses debug protocol to interact with JavaScript codes being executed in browser, and IDE can use debug protocol to step in, step out and continue until hitting breakpoint. We can also use this debug protocol to trace the program being analyzed and perform dynamic taint analysis. However, there are several problems.
+
+**Firstly**, the on-line resource of debug protocol development is rare. The only resource seems to be the official document, which is a API documentation instead of a step-by-step tutorial, thus a bit hard to understand.
+
+**Secondly**, I am not sure if debug protocol supports tracing every operation. For example, in step-in command in IDE, a statement `a = b * c + d` will be jumped over directly rather than separate multiplication and addition, but this is what we need for accurate dynamic taint analysis. Thus if debug protocol does not support such operation and I have spent too much time on it, it will be wasteful.
+
+Therefore, using debug protocol is too risky and not appropriate for my project.
+
+## Modifying JavaScript Engine for Analysis
+
+Since JavaScript is always executed by JavaScript engine, we can modify 
+
+## Instrumentation
+
+Instrumentation is a common way to perform dynamic analysis. It modifies codes to be analyzed and insert the codes for analysis. For example, [Intel Pin Tool](https://software.intel.com/en-us/articles/pin-a-dynamic-binary-instrumentation-tool) is a dynamic code instrumentation tool for binary program. [AFL Fuzzer](http://lcamtuf.coredump.cx/afl/) also applies instrumentation technique to generate high code coverage for binary program. Although instrumentation for binary program is common, counterpart resources in field of JavaScript analysis is quite rare. Here are possible ways that JavaScript program can be instrumented.
+
+### Byte Code Level Instrumentation
+
+JavaScript byte code is a intermediate representation of JavaScript, and it varies among different browser engine. Because the final goal of this project is to build a chrome extension, the byte code that we may need to consider is byte code in V8, the JavaScript engine used by chrome. Since it is more like assembly than a high level language, the instrumentation in this level is a bit similar to binary instrumentation that I have discussed above. 
+
+However, unlike binary instrumentation, in which there are many resources on-line, JavaScript byte code instrumentation has rarely been investigated before. Also such low-level is too dependent on specific browser: for example, the instrumentation on V8 byte code cannot work at ChakraCore,  the JavaScript engine used by Edge. Therefore, this approach is not appropriate for my project. 
+
+### Source Code Level Instrumentation
+
+Source code instrumentation is to instrument through modifying JavaScript file, usually by proxy. Fortunately, there is one framework that provides such functionality, Jalangi2, which is a big advantage. Also, this does not depend on particular JavaScript engine in specific browser, so it is easier to migrate to browsers other than chrome. Therefore, this becomes my final choice, and I will explain this in detail in next section.
+
 # Jalangi2
 
 ## Overview
