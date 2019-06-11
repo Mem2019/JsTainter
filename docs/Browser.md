@@ -78,7 +78,26 @@ TaintUnit.prototype.taintSource = function (id)
 };
 ```
 
- When this function is called, `id` must be different for different sources. For example, in my implementation, `id` is 1 for URL string, and 2 for return value of `prompt`.
+ When this function is called, `id` must be different for different sources. For example, in my implementation, `id` is 1 for URL string.
+
+### ID Allocator
+
+However, even if the type of input is same, the taint `id` should still be different sometimes. For example, when `prompt` function is called multiple times, the `id` should be different for each time in order to specify which `prompt` a particular taint comes from. Therefore, an `id` allocator is required. 
+
+My approach to implement allocator is very easy, the code is shown below.
+
+```javascript
+//Implemented in class Browser
+var nextId = 1;
+this.getNextId = function ()
+{
+	if (nextId >= 32)
+		throw Error("Too many input sources");
+	return nextId++; // return nextId, and increment it
+};
+```
+
+Since JavaScript shift operator only support 32 bit integer (e.i. because `1 << 32 === 1`), the maximum size of this boolean array represented in integer form is 32, and an `Error` is thrown if there are too many `id`s being allocated. 
 
 # Source and Sink
 
@@ -106,9 +125,30 @@ If `taintPathName` is set to `true`, the tainted part starts after `base.origin`
 
 ### prompt
 
-Since the string returned from `prompt` function can be fully controlled by user, all characters in string should be tainted. However, when user click "cancel", `null` will be returned and it will not be marked as tainted, since in current rule `null` cannot be tainted.
+Since the string returned from `prompt` function can be fully controlled by user, all characters in string should be tainted. However, when user click "cancel", `null` will be returned and it will not be marked as tainted, since in current rule `null` cannot be tainted. 
 
+### HTMLInputElement
 
+`HTMLInputElement` is the HTML input tag, for example `<input type="text" id="myText">`. JavaScript program can access the content in this input tag by using `document.getElementById("myText").value`, which should all be tainted as it can be fully controlled by user. 
+
+For different input tags, different `id` values are used. However, for same input tag, the `id` should be same. Therefore, we need a recording that maps the input tag DOM object to previously allocated `id` value, if any. Since JavaScript object only supports string as property, we cannot use object to implement the map. Therefore, an array is used to represent such information. I have implemented a `getInputId` function: given a input tag DOM object, return the corresponding `id`, which can be previously recorded or newly allocated, depending on if this object is found in that recording array. 
+
+```javascript
+var inputsArr = [];
+this.getInputId = function (input)
+{// `input` is DOM object of input tag, e.g. document.getElementById("myText")
+	for (var i = 0; i < inputsArr; i++)
+	{
+		if (inputsArr[i].input === input)
+			return inputsArr[i].id; // return the id, if found 
+	}
+	const nextId = this.getNextId();
+	inputsArr.push({input:input, id:nextId});
+	return nextId; // allocate and record new id, if not found
+};
+```
+
+However, there are drawbacks for this approach: the complexity is `O(n)`. Another approach could be using `id` field of DOM object as the property that maps to previously allocated `id` value (e.g. `{myText: 1}`). However, even `id` for each DOM object should be unique according to the specification, a HTML page does not have to conform the standard, which might cause problem. By contrast, the `O(n)` complexity does not hurt so much because there would not be as many input tags in a HTML page. 
 
 # Browser Extension Todos
 

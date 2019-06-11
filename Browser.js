@@ -1,12 +1,12 @@
 (function (sandbox) {
 function Browser()
 {
-	var nextId = 3;
-	const getNextId = function ()
+	var nextId = 1;
+	this.getNextId = function ()
 	{
 		if (nextId >= 32)
 			throw Error("Too many input sources");
-		++nextId;
+		return nextId++; // return nextId, and increment it
 	};
 	var inputsArr = [];
 	this.getInputId = function (input)
@@ -16,7 +16,7 @@ function Browser()
 			if (inputsArr[i].input === input)
 				return inputsArr[i].id;
 		}
-		const nextId = getNextId();
+		const nextId = this.getNextId();
 		inputsArr.push({input:input, id:nextId});
 		return nextId;
 	};
@@ -44,7 +44,7 @@ Browser.prototype.getField = function (base, offset, config)
 	}
 	if (base === window.location)
 	{
-		ft = ft(1);
+		ft = ft(0);
 		switch (offset)
 		{
 		case "hash":
@@ -65,7 +65,7 @@ Browser.prototype.getField = function (base, offset, config)
 		}
 	}
 	else if (String(base) === '[object HTMLInputElement]'
-		&& offset === 'value')
+		&& offset === 'value' && base.type === 'text')
 	{
 		ft = ft(this.getInputId(base));
 		return getRet(base.value, 0, ft);
@@ -82,7 +82,7 @@ Browser.prototype.invokeFun = function (f, abase, args)
 		ret = f.apply(abase, args);
 		if (typeof ret == 'string')
 		{
-			sv = fillArray(ft(2), ret.length);
+			sv = fillArray(ft(this.getNextId()), ret.length);
 			return {ret: ret, sv: sv};
 		}
 		else
