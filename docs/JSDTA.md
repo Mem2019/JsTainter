@@ -298,15 +298,41 @@ const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), 'x', 3));
 
 ## Choice
 
-In the background chapter, I have covered 3 approach: dynamic taint analysis, static taint analysis and blended taint analysis. The blended taint analysis is simply modified version //fuck static analysis, todo!!!
+In the background chapter, I have covered 3 approach: dynamic taint analysis, static taint analysis and blended taint analysis. The blended taint analysis is simply improved version of static analysis, so the key point is to compare blended taint analysis with dynamic taint analysis. 
+
+Although blended analysis gather the dynamic information firstly, it still applies static analysis to get the final result. By contrast, dynamic analysis traces the program and perform analysis as it runs, which should give higher accuracy. The reason is that the dynamic information that can be gathered by blended analysis in first stage is not informative enough: since the analysis and dynamic tracing is done separately, the dynamic information that can be used by static analysis is limited. By contrast, dynamic analysis can provides almost all dynamic information because the analysis is done along with the dynamic tracing.
+
+For example, when array and object are used to store tainted user input, the blended taint analysis might not function well.
+
+```javascript
+const hash = window.location.hash; // hash is tainted
+const obj = {hash: hash};
+function get(obj, prop)
+{
+	return obj[prop];
+}
+const r = get(obj, "hash"); // equivalent to obj.hash
+```
+
+If blended analysis is used here, it is hard to identify `r` is actually fetched from `obj.hash` unless using complicated program analysis techniques; however, using dynamic taint analysis, since analysis is performed along with program tracing, it is easy to figure out `obj.hash` is returned and assigned to `r`, which should be tainted. 
+
+However, there is an advantage of blended analysis: the implicit flow can be detected. Since dynamic analysis can only perform analysis for every JavaScript operation separately, it is hard to view and analyze the JavaScript codes as a whole to figure out implicit flow. By contrast, in static phase of blended analysis, if good program analysis technique is applied, it is possible to detect implicit flow. Nonetheless, as the program logic becomes complicated, program analysis can also get wrong. Therefore, considering the difficulty of performing program analysis on JavaScript and the uncertain effectiveness of automatic implicit flow detection, I would still favor dynamic analysis rather than blended analysis.
 
 ## Overall Structure
 
 Here is the UML graph of my project. //todo
 
-Field `analysis` is the class which implements the main dynamic taint analysis logic. The  
+As I have suggested in background chapter, everything is based on Jalangi2 framework, thus every class is a field of `J$`. 
 
-The final project is to implement a JavaScript dynamic taint analysis that works in browser
+Field `analysis` is an instance of class that implements the main dynamic taint analysis logic, which is implemented in file `DynTaintAnalysis.js`. In this class, callback functions specified by Jalangi2 that will be called in runtime dynamic analysis are defined and implemented. The `results` field is used to store the result of taint analysis, which will be covered later.
+
+Field `dtaTaintLogic` is the actual implementation of taint propagation rule for the particular type of `taint information variable`, which will be covered later. In other word, the `template method design pattern` is used here: if I want to change the type of `taint information variable`, ideally I only I need to change the instance stored in `dtaTaintLogic` field, without modifying codes in other files, which is a good software engineering practice.
+
+Field `dtaBrowser` is some browser-side handling codes. This is separated from `DynTaintAnalysis.js` because I want the code to be both runnable in `node.js` and in browser. This is also a `template method design pattern`, and I will cover the detail about this when browser integration is discussed. 
+
+Field `dtaUtils` is a utility class in which some utility functions are implemented. These functions could not only be used by `DynTaintAnalysis.js`, but can also be used by other files, because this is simply a low-level utility class.
+
+Field `dtaConfig` is a configuration instance used to specify the some behaviors of taint analysis algorithm. This will be covered in detail later.
 
 # Design of Shadow Value
 

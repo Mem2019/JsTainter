@@ -69,7 +69,13 @@ The reason why `dtaBrowser.getField` does not return a `AnnotatedValue` object i
 
 ## Multiple Sources Implementation
 
-As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user input can come from different sources.
+As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user input can come from different sources. 
+
+
+
+
+
+
 
 
 

@@ -1,29 +1,15 @@
 (function (sandbox)
 {
 const Utils = sandbox.dtaUtils;
-const Log = sandbox.dtaLog;
-
+const Log = console; //sandbox.dtaLog;
+const config = sandbox.dtaConfig;
 	const assert = function (b)
 	{
 		if (b === false)
 			throw Error("Assertion Error");
 	};
 
-	function Config()
-	{
-		this.ifTaintNaN = true;
-		this.ifTaintResWhenKeyTaint = false;
-		this.ifTaintElemWhenKeyTaint = false;
-		this.logWhenWeirdAddOper = true;
-		this.logWhenWeirdArithOper = true;
-		this.logWhenBothTaintCmpOper = true;
-		this.logWhenBitOperTaint = true;
-		this.logWhenTaintedOffset = true;
-		this.logWhenNonFuncBeingCalled = true;
-		this.logWhenTaintFuncBeingCalled = true;
-		this.logAtCond = true;
-	}
-	var config = new Config();
+
 
 
 function TaintAnalysis(rule, config)

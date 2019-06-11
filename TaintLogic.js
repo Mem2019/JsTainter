@@ -1,21 +1,21 @@
 
 (function (sandbox) {
 	const Utils = sandbox.dtaUtils;
-function TaintUnit(config)
+function TaintLogic(config)
 {
 	this.config = config;
 }
-TaintUnit.prototype.noTaint = false;
-TaintUnit.prototype.fullTaint = true;
-TaintUnit.prototype.arithmetic = function(left, right, op, pos)
+TaintLogic.prototype.noTaint = false;
+TaintLogic.prototype.fullTaint = true;
+TaintLogic.prototype.arithmetic = function(left, right, op, pos)
 {
 	return left || right;
 };
-TaintUnit.prototype.unaryArithmetic = function(left)
+TaintLogic.prototype.unaryArithmetic = function(left)
 {
 	return left;
 };
-TaintUnit.prototype.toStringTaint = function(a,t,f)
+TaintLogic.prototype.toStringTaint = function(a,t,f)
 {
 	var ret;
 	if (f !== 'undefined')
@@ -24,7 +24,7 @@ TaintUnit.prototype.toStringTaint = function(a,t,f)
 		ret = Utils.fillArray(t, f(a).length);
 	return ret;
 };
-TaintUnit.prototype.compressTaint = function (shadow)
+TaintLogic.prototype.compressTaint = function (shadow)
 {//todo, make it more generic
 	var ret;
 	if (typeof shadow == 'boolean')
@@ -40,37 +40,37 @@ TaintUnit.prototype.compressTaint = function (shadow)
 	}
 	return ret;
 };
-TaintUnit.prototype.ordTaint = function (t)
+TaintLogic.prototype.ordTaint = function (t)
 {
 	var ret;
 	ret = t[0];
 	return ret;
 };
-TaintUnit.prototype.chrTaint = function (t)
+TaintLogic.prototype.chrTaint = function (t)
 {
 	var ret;
 	ret = [t];
 	return ret;
 };
-TaintUnit.prototype.escapeTaint = function (t ,type)
+TaintLogic.prototype.escapeTaint = function (t ,type)
 {
 	var ret;
 	ret = t;
 	return ret;
 };
-TaintUnit.prototype.getFieldTaint = function (elemT, idxT)
+TaintLogic.prototype.getFieldTaint = function (elemT, idxT)
 {//todo: maybe need to be changed for more option
 	var ret;
 	ret = elemT;
 	return ret;
 };
-TaintUnit.prototype.getStringCharTaint = function (baseT, offsetT)
+TaintLogic.prototype.getStringCharTaint = function (baseT, offsetT)
 {
 	var ret;
 	ret = [baseT];
 	return ret;
 };
-TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
+TaintLogic.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
 {
 	var ret;
 	if (argTaintArr.reduce((a, b) => a || b))
@@ -89,6 +89,6 @@ TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startId
 	ret = false;
 	return ret;
 };
-sandbox.dtaTaintLogic = new TaintUnit();
+sandbox.dtaTaintLogic = new TaintLogic();
 })(J$);
 //todo, make it an array of boolean
