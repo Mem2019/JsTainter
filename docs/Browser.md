@@ -67,7 +67,11 @@ else
 
 The reason why `dtaBrowser.getField` does not return a `AnnotatedValue` object is that I do not want `Browser.js` to be dependent on `AnnotatedValue` class, which is implemented in `DynTaintAnalysis.js`.
 
-## Multiple Sources
+## Multiple Sources Implementation
+
+As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user input can come from different sources.
+
+
 
 # Source and Sink
 
@@ -81,11 +85,11 @@ As I suggests in last section, this stands for URL of web page. However, there a
 
 **`hash` and `search`**
 
-Field `search` is the query string begin with `?`, and field `hash` is the fragment string begin with `#`. These two are all parts of the URL and can by controlled by user, thus should be tainted. What I mean by "tainted" here is "fully tainted". Since shadow value of string is an array of `taint information variable` as I suggested in last chapter is However, there are some special cases. 
+Field `search` is the query string begin with `?`, and field `hash` is the fragment string begin with `#`. These two are all parts of the URL and can by controlled by user, thus should be tainted. What I mean by "tainted" here is "fully tainted". Since shadow value of string is an array of `taint information variable` as I suggested in last chapter, a fully tainted string is  However, there are some special cases. 
 
 Field `pathname` is the path of the URL, which can be both tainted and untainted: when static path is used, the `pathname` should be untainted because content of page will change if path is modified; when path is used in the same way as query string, `pathname` should be tainted because user can control this string without going to another page. Therefore, since this is dependent on different website implementation, I should enable user to manually set this: there is a field in `config` variable that is used to specify if `pathname` should be tainted. 
 
-Field `href` is the whole URL, which obviously cannot be fully 
+Field `href` is the whole URL, which obviously cannot be fully controlled by user: user can control 
 
 # Browser Extension Todos
 

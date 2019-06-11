@@ -32,7 +32,7 @@ function TaintAnalysis(rule, config)
 	const addLogRec = function(analysis, pos, msg)
 	{
 		assert(typeof pos.pos !== 'undefined');
-		analysis.results = analysis.results.concat(
+		analysis.results = analysis.results.push(
 			{type: 'log', file: pos.fname, pos: pos.pos, msg: msg});
 	};
 	function AnnotatedValue(val, shadow)
@@ -1062,34 +1062,28 @@ function TaintAnalysis(rule, config)
 		return {result:ret};
 		//return that newly created object
 	};
-	function rwRec(analysis, pos, name, val, rw)
+	function rwRec(analysis, iid, name, val, rw)
 	{
-		var sv = actual(val);
-		var typeOf = typeof sv;
-		if (typeOf !== 'string' && typeOf !== 'object')
-			typeOf = 'basic';
-		analysis.results = analysis.results.concat(
-			{type: rw, typeOf: typeOf,
-			file: pos.fname, pos: pos.pos,
-			name: name});
+		const pos = getPosition(iid);
+		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
+		{
+			const typeOf = typeof actual(val);
+			analysis.results = analysis.results.push(
+				{
+					type: rw, typeOf: typeOf,
+					file: pos.fname, pos: pos.pos,
+					name: name
+				});
+		}
 	}
 	this.read = function (iid, name, val)
 	{
-		var pos = getPosition(iid);
-		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-		{
-			rwRec(this, pos, name, val, 'read');
-		}
+		rwRec(this, iid, name, val, 'read');
 	};
 	this.write = function (iid, name, val)
 	{
-		var pos = getPosition(iid);
-		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
-		{
-			rwRec(this, pos, name, val, 'write');
-		}
-	}
-
+		rwRec(this, iid, name, val, 'write');
+	};
 }
 const taintUnit = sandbox.dtaTaintLogic;
 sandbox.analysis = new TaintAnalysis(taintUnit, config);

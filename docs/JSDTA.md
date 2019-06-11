@@ -45,7 +45,9 @@ However, unlike binary instrumentation, in which there are many resources on-lin
 
 ### Source Code Level Instrumentation
 
-Source code instrumentation is to instrument through modifying JavaScript file, usually by proxy. Fortunately, there is one framework that provides such functionality, Jalangi2, which is a big advantage. Also, this does not depend on particular JavaScript engine in specific browser, so it is easier to migrate to browsers other than chrome. Therefore, this becomes my final choice, and I will explain this in detail in next section.
+Source code instrumentation is to instrument through modifying JavaScript file, usually by proxy. Fortunately, there is one framework that provides such functionality, Jalangi2, which is a big advantage. Also, this does not depend on particular JavaScript engine in specific browser, so it is easier to migrate to browsers other than chrome. Therefore, this becomes my final choice of dynamic analysis, and I will explain this in detail in next section.
+
+
 
 # Jalangi2
 
@@ -292,11 +294,19 @@ J$.N(41, 'x', 'x', 0);
 const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), 'x', 3));
 ```
 
+# Design
 
+## Choice
 
-# Overall Design
+In the background chapter, I have covered 3 approach: dynamic taint analysis, static taint analysis and blended taint analysis. The blended taint analysis is simply modified version //fuck static analysis, todo!!!
 
-//todo, because may modify in the future
+## Overall Structure
+
+Here is the UML graph of my project. //todo
+
+Field `analysis` is the class which implements the main dynamic taint analysis logic. The  
+
+The final project is to implement a JavaScript dynamic taint analysis that works in browser
 
 # Design of Shadow Value
 
@@ -346,7 +356,7 @@ Nonetheless, specific rule for this strategy need more investigation: for exampl
 
 This is actually not about taint analysis but about symbolic execution. Instead of just recording a state of taint, whole expression is traced. I have covered some of this when [this paper](todo) is discussed in background section. 
 
-However, different from normal symbolic execution which will result in multiple states when a symbolic expression is used in conditional jumps, my current code does not support such multiple states, because different implementation of taint variable is simply different implementation of `dtaTaintLogic` field in `J$`. The main taint analysis logic in `DynTaintAnalysis.js` does not vary as the implementation of taint information variable changes, and this file is not designed to have multiple states. 
+However, different from normal symbolic execution which will result in multiple states when a symbolic expression is used in conditional jumps, my current code does not support such multiple states, because different implementation of taint variable is simply different implementation of `dtaTaintLogic` field in `J$`. The main taint analysis logic in `DynTaintAnalysis.js` (will be discussed later) does not vary as the implementation of taint information variable changes, and this file is not designed to have multiple states. 
 
 Therefore, current strategy could only be to log the expression on both sides when a symbolic expression is used in conditional jumps.
 
@@ -474,15 +484,92 @@ The implementation for `stripTaints` is clear and simple, we check the variable 
 
 ## Result of Taint Analysis
 
-Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. Here are my approach to record the results of the dynamic taint analysis.
+Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called `results`, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 3 types of record: `read`, `write` and `log`.
 
 ### Tainted Variable Read and Write
 
-`TaintAnalysis` class of `JsTainter` will maintain 2 objects as field that maps the location (which is obtained from `iid` and covered in last section) to the number of times this particular variable is read or write with taint. To be specific, `readRec` and `writeRec` are the fields to record taint variable read and taint variable write, respectively.  When value of some tainted variable is read or written, this corresponding key will be incremented. For example, if `a=b+c` at line 1 of `file.js` is executed and `b` is tainted, the value in `readRec["file.js:1:3:1:4"]` will be incremented. //todo, maybe add a figure
+Although `read` and `write` are 2 different types of records, their implementation are very similar, so I will discuss them together. As the name suggests, a `read` record stands for the information that a tainted variable is read (e.i. used), while a `write` records stands for the information that a variable is written by a tainted value (e.i. assigned). The idea is clear: I want to represent the taint flow as the program executes, so when a tainted variable is used or when a tainted value is assigned to a variable, there might be some taint flow, which I need to record and to be shown to analyzer. 
+
+What I mean by tainted here is not only a tainted basic-type value like a tainted integer, but also a tainted object or string. As long as one of the character in string is tainted, or as long as one of the value inside the object is tainted, the object or string will be regarded as tainted.
+
+The `read` record will be pushed into `results` when `analysis.read` and `analysis.getField` callbacks are called, and similarly the `write` record will be pushed into `results` when `analysis.read` and `analysis.getField` callbacks are called, when relevant value used in the operation is tainted. 
+
+**Fields**
+
+There are several fields in a piece of `read` and `write` record:
+
+`type` is used to specify the type of the record, and should be `'read'` for `read` record and `'write'` for `write` record.
+
+`typeOf` is used to specify type of the tainted value. For `read` record, this is the type of the tainted variable being read; and for `write` record, this is the type of tainted value used to assign the variable. The reason why such information might useful is that such approach to record taint information flow sometimes causes inaccurate result. For example:
+
+```javascript
+var arr; 
+//`arr` is an Array with one of the element being tainted
+arr.push(1);
+```
+
+When `arr.push(1)` is executed, `arr` object will actually be read and thus `analysis.read` callback will be called. Since `arr` is tainted, a `read` record will be pushed into `results` array. However, this does not really make sense because here we are pushing a value into `arr` instead of propagating any taint value. The key problem is that here it is the reference of `arr` that is used instead of tainted variable inside the object. 
+
+I could simply make no recording when the value passed into `analysis.read` is an object type and record only in `analysis.getField` when tainted variable is fetched, but I think it is better to record everything but specify the type of the value in field `typeOf`, so that more information can be provided, and analyzer can also choose to filter out the records with object type if not needed.
+
+`file` and `pos` fields are used to specify the position where this record occurs: `file` is the filename and `pos` specifies line number and column number in array form. They come from the return value of `iidToLocation` (`fname` and `pos` fields respectively), which I have covered in background chapter.
+
+`name` is the variable name or field name. For example, statement `a.c = b` (`b` is tainted) will produce `"b"` as `name` field of the `read` record, and `"c"` as `name` field of the `write` record.
+
+**Implementation**
+
+Since `write` record and `read` record are very similar, and the only difference is the `type` field, they are implemented in same function, `rwRec`, except type is accepted as argument, which are passed differently in `analysis.read` and `analysis.write`.
+
+```javascript
+function rwRec(analysis, iid, name, val, rw)
+{
+	const pos = getPosition(iid);
+	if (val instanceof AnnotatedValue || isTainted(shadow(val)))
+	{// if `val` is tainted
+		const typeOf = typeof actual(val);
+		analysis.results = analysis.results.push(
+			{// push relavant information into `results` array
+				type: rw, typeOf: typeOf,
+				file: pos.fname, pos: pos.pos,
+				name: name
+			});
+	}
+}
+this.read = function (iid, name, val)
+{
+	rwRec(this, iid, name, val, 'read');
+};
+this.write = function (iid, name, val)
+{
+	rwRec(this, iid, name, val, 'write');
+};
+//everything is same except `type` field
+```
+
+In addition, `this.read` and `this.write` functions are also called in `this.getField` and `this.putField`, respectively. 
 
 ### Special Information
 
-The special information is also one of the results of taint analysis, `logRec` field, to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a `if` statement. These information can help user to customize the taint propagation rule and make the analysis more accurate. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later. Same as 2 fields above, the `logRec` also uses position as key, but the value is an array of string that recorded all messages being logged at this position.
+The special information is also one of the results of taint analysis, and its `type` field is `'log'` to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a `if` statement. These information can help user to customize the taint propagation rule and make the analysis more accurate. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later when relevant concept is covered. 
+
+**Fields**
+
+`file` and `pos` fields are exactly same as ones in `read` or `write` record.
+
+`msg` is the message used to inform analyzer, which is different for different special information.
+
+**Implementation**
+
+Implementation is easy: just push the relevant information into the `results` array. 
+
+```javascript
+const addLogRec = function(analysis, pos, msg)
+{
+	analysis.results = analysis.results.push(
+		{type: 'log', file: pos.fname, 
+         pos: pos.pos, msg: msg});
+};
+```
 
 ## Binary Operators
 
