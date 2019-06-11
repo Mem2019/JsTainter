@@ -13,6 +13,8 @@
 		this.logWhenNonFuncBeingCalled = true;
 		this.logWhenTaintFuncBeingCalled = true;
 		this.logAtCond = true;
+		this.taintPathName = false;
+		this.ifTaintUndefined = true;
 	}
 	sandbox.dtaConfig = new DefaultConfig();
 })(J$);

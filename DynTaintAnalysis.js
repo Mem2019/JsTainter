@@ -686,18 +686,18 @@ function TaintAnalysis(rule, config)
 			{
 				return {
 					result: new AnnotatedValue(
-						Number(val.substr(11)), rule.fullTaint)
+						Number(val.substr(11)), rule.taintSource(0))
 				};
 			}
 			else if (val.substr(0, 14) === "ta1nt3d_string")
 			{
 				var ret = val.substr(14);
-				var taint = Utils.fillArray(rule.fullTaint, ret.length);
+				var taint = Utils.fillArray(rule.taintSource(0), ret.length);
 				return {result: new AnnotatedValue(ret, taint)};
 			}
 			else if (val === "ta1nt3d_bool")
 			{
-				return {result: new AnnotatedValue(true, rule.fullTaint)};
+				return {result: new AnnotatedValue(true, rule.taintSource(0))};
 			}
 		}
 		if (typeof val == 'object' && val !== null)

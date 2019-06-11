@@ -69,15 +69,16 @@ The reason why `dtaBrowser.getField` does not return a `AnnotatedValue` object i
 
 ## Multiple Sources Implementation
 
-As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user input can come from different sources. 
+As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user inputs can come from different sources. `MultSrcTaintLogic.js` is the file that implements multiple source taint propagation. The logic is almost same except `||` is changed to `|`, because now number is used to represent a boolean array, and bitwise `or` is same as applying `or` to every corresponding element of the boolean array. Another difference is `taintSource` function used to obtain the initial `taint information variable` for source, instead of just returning true, `id` argument is used as the shift amount. The code is shown below.
 
+```javascript
+TaintUnit.prototype.taintSource = function (id)
+{
+	return 1 << id;
+};
+```
 
-
-
-
-
-
-
+ When this function is called, `id` must be different for different sources. For example, in my implementation, `id` is 1 for URL string, and 2 for return value of `prompt`.
 
 # Source and Sink
 
@@ -89,13 +90,25 @@ In this section, I will discuss different types of possible source and sink in b
 
 As I suggests in last section, this stands for URL of web page. However, there are several different fields in this object.
 
-**`hash` and `search`**
-
-Field `search` is the query string begin with `?`, and field `hash` is the fragment string begin with `#`. These two are all parts of the URL and can by controlled by user, thus should be tainted. What I mean by "tainted" here is "fully tainted". Since shadow value of string is an array of `taint information variable` as I suggested in last chapter, a fully tainted string is  However, there are some special cases. 
+Field `search` is the query string begin with `?`, and field `hash` is the fragment string begin with `#`. These two are all parts of the URL and can by controlled by user, thus all of characters in string should be tainted, which means all elements in shadow value array should set to return value from `taintSource`. However, there are some special cases. 
 
 Field `pathname` is the path of the URL, which can be both tainted and untainted: when static path is used, the `pathname` should be untainted because content of page will change if path is modified; when path is used in the same way as query string, `pathname` should be tainted because user can control this string without going to another page. Therefore, since this is dependent on different website implementation, I should enable user to manually set this: there is a field in `config` variable that is used to specify if `pathname` should be tainted. 
 
-Field `href` is the whole URL, which obviously cannot be fully controlled by user: user can control 
+Field `href` is the whole URL, which obviously cannot be fully controlled by user: user can control query string and fragment only, and can control path if corresponding `config` field is set as I mentioned before. Therefore, only part of the string is tainted (set to return value from `taintSource`) and remaining string is untainted (set to value 0). My approach to identify the boundary is to use `indexOf` function as shown.
+
+```javascript
+const start = config.taintPathName ?
+	base.href.indexOf(base.origin) + base.origin.length :
+	base.href.indexOf('?');
+```
+
+If `taintPathName` is set to `true`, the tainted part starts after `base.origin`, which is start of the path; if not, the tainted part starts after the first `?`, which is start of the query string.
+
+### prompt
+
+Since the string returned from `prompt` function can be fully controlled by user, all characters in string should be tainted. However, when user click "cancel", `null` will be returned and it will not be marked as tainted, since in current rule `null` cannot be tainted.
+
+
 
 # Browser Extension Todos
 

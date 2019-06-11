@@ -6,7 +6,7 @@ function TaintLogic(config)
 	this.config = config;
 }
 TaintLogic.prototype.noTaint = false;
-TaintLogic.prototype.fullTaint = true;
+TaintLogic.prototype.taintSource = () => true;
 TaintLogic.prototype.arithmetic = function(left, right, op, pos)
 {
 	return left || right;
