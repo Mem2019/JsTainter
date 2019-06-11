@@ -32,7 +32,7 @@ function TaintAnalysis(rule, config)
 	const addLogRec = function(analysis, pos, msg)
 	{
 		assert(typeof pos.pos !== 'undefined');
-		analysis.results = analysis.results.push(
+		analysis.results.push(
 			{type: 'log', file: pos.fname, pos: pos.pos, msg: msg});
 	};
 	function AnnotatedValue(val, shadow)
@@ -1068,7 +1068,7 @@ function TaintAnalysis(rule, config)
 		if (val instanceof AnnotatedValue || isTainted(shadow(val)))
 		{
 			const typeOf = typeof actual(val);
-			analysis.results = analysis.results.push(
+			analysis.results.push(
 				{
 					type: rw, typeOf: typeOf,
 					file: pos.fname, pos: pos.pos,
