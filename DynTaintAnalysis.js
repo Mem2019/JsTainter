@@ -1,7 +1,7 @@
 (function (sandbox)
 {
 const Utils = sandbox.dtaUtils;
-const Log = console; //sandbox.dtaLog;
+const Log = sandbox.dtaLog;
 const config = sandbox.dtaConfig;
 	const assert = function (b)
 	{
@@ -750,6 +750,7 @@ function TaintAnalysis(rule, config)
 		}
 	}
 	const actualArgs = (args) => Array.prototype.map.call(args, actual);
+	const shadowArgs = (args) => Array.prototype.map.call(args, shadow);
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
 		var position = getPosition(iid);
@@ -790,13 +791,22 @@ function TaintAnalysis(rule, config)
 		}
 		if (Utils.isNative(f))
 		{
-			var aargs, abase;
+			var aargs = actualArgs(args), abase = actual(base);
 			var sv, ret, taints;
-			ret = sandbox.dtaBrowser.invokeFun(f, actual(base), actualArgs(args));
+
+			ret = sandbox.dtaBrowser.invokeFunSrc(f, abase, aargs);
 			if (typeof ret != 'undefined')
 			{
 				return getTaintResult(ret.ret, ret.sv);
 			}
+
+			ret = sandbox.dtaBrowser.invokeFunSnk(f, abase, aargs,
+				shadow(base), shadowArgs(args), isTainted);
+			if (typeof ret != 'undefined')
+			{
+				addLogRec(this, position, ret.msg);
+			}
+
 			switch (f)
 			{
 			case Function.prototype.apply:
@@ -1017,14 +1027,25 @@ function TaintAnalysis(rule, config)
 	};
 	this.putField = function (iid, base, offset, val)
 	{
-		var abase = actual(base);
-		var sbase = shadow(base);
-		var aoff = actual(offset);
+		const abase = actual(base);
+		const sbase = shadow(base);
+		const aoff = actual(offset);
+		const aval = actual(val), sval = shadow(val);
+
+		if (isTainted(sval))
+		{
+			const ret = sandbox.dtaBrowser.putField(
+				abase, aoff, aval, sval, config);
+			if (typeof ret !== 'undefined')
+			{
+				addLogRec(this, getPosition(iid), ret.msg);
+			}
+		}
 
 		this.write(iid, String(aoff), val);
 
-		abase[aoff] = actual(val);//todo, when offset tainted?
-		sbase[aoff] = shadow(val);
+		abase[aoff] = aval;//todo, when offset tainted?
+		sbase[aoff] = sval;
 
 		return {result:val};
 	};

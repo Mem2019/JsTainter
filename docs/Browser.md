@@ -131,6 +131,8 @@ Since the string returned from `prompt` function can be fully controlled by user
 
 `HTMLInputElement` is the HTML input tag, for example `<input type="text" id="myText">`. JavaScript program can access the content in this input tag by using `document.getElementById("myText").value`, which should all be tainted as it can be fully controlled by user. 
 
+**Store Previously Allocated ID**
+
 For different input tags, different `id` values are used. However, for same input tag, the `id` should be same. Therefore, we need a recording that maps the input tag DOM object to previously allocated `id` value, if any. Since JavaScript object only supports string as property, we cannot use object to implement the map. Therefore, an array is used to represent such information. I have implemented a `getInputId` function: given a input tag DOM object, return the corresponding `id`, which can be previously recorded or newly allocated, depending on if this object is found in that recording array. 
 
 ```javascript
@@ -148,7 +150,15 @@ this.getInputId = function (input)
 };
 ```
 
-However, there are drawbacks for this approach: the complexity is `O(n)`. Another approach could be using `id` field of DOM object as the property that maps to previously allocated `id` value (e.g. `{myText: 1}`). However, even `id` for each DOM object should be unique according to the specification, a HTML page does not have to conform the standard, which might cause problem. By contrast, the `O(n)` complexity does not hurt so much because there would not be as many input tags in a HTML page. 
+However, there are drawbacks for this approach: the complexity is `O(n)`. Another approach could be replacing `inputsArr` with an object, which uses `id` field of DOM object as the property that maps to previously allocated `id` value (e.g. `{myText: 1}`). However, even `id` for each DOM object should be unique according to the specification, a HTML page does not have to conform the standard, which might cause problem. By contrast, the `O(n)` complexity does not hurt so much because there would not be as many input tags in a HTML page. 
+
+## Sink
+
+There are two types of sinks. The first one is when field of global object is set, and the second one is native function that deserve notice. 
+
+
+
+For sink, the key is to log information instead of process, so unlike 
 
 # Browser Extension Todos
 
@@ -165,6 +175,8 @@ However, there are drawbacks for this approach: the complexity is `O(n)`. Anothe
 2. find the case where it is commonly used but not properly handled and modify, including Jalangi2 and JsTainter
 
    ​	e.g. `const` and `lambda` bug in Jalangi2, some more native functions that are common
+
+   ​	base64 JSON
 
 3. so run it successfully with better accuracy, finish report & evaluation
 

@@ -1,17 +1,3 @@
-
 (function (sandbox) {
-
-function Log(){}
-Log.prototype.log = function (msg)
-{
-	const logStr = "[*] Log: " + msg + '\n';
-	console.log(logStr);
-};
-
-sandbox.dtaLog = new Log();
+	sandbox.dtaLog = console;
 })(J$);
-/*/: ----------nodejs
-module.exports = {
-	Log : Log
-};
-//----------nodejs*/

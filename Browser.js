@@ -71,7 +71,7 @@ Browser.prototype.getField = function (base, offset, config)
 		return getRet(base.value, 0, ft);
 	}
 };
-Browser.prototype.invokeFun = function (f, abase, args)
+Browser.prototype.invokeFunSrc = function (f, abase, args)
 {
 	var ret,sv;
 	const ft = sandbox.dtaTaintLogic.taintSource;
@@ -93,6 +93,78 @@ Browser.prototype.invokeFun = function (f, abase, args)
 		return;
 	}
 
+};
+Browser.prototype.putField = function (base, offset, val, sval, config)
+{
+	function genMsg(c)
+	{
+		var ret;
+		try
+		{
+			ret = "Tainted value " + JSON.stringify(val) +
+				' ' + JSON.stringify(sval) +
+				" has been written to " + c + ' ' + offset;
+		}
+		catch (e)
+		{
+			ret = "Tainted value has been written to " +
+				c + ' ' + offset;
+		}
+		return ret;
+	}
+	switch (base)
+	{
+	case window.location:
+		switch (offset)
+		{
+		case 'hash':
+		case 'host':
+		case 'hostname':
+		case 'href':
+		case 'origin':
+		case 'pathname':
+		case 'port':
+		case 'protocol':
+		case 'search':
+			return {msg: genMsg("window.location.")};
+		}
+		return;
+	case document:
+		if (offset === 'cookie')
+			return {msg: genMsg("cookie.")};
+		return;
+	}
+	const m = String(base).match(/\[object HTML[a-zA-Z0-9]+Element]/);
+	if (m !== null && m[0] === String(base))
+	{
+		return {msg: genMsg(String(base))};
+	}
+};
+
+Browser.prototype.invokeFunSnk = function (f, abase, aargs, sbase ,sargs, isTainted)
+{
+	function genMsg()
+	{
+		var ret;
+		try
+		{
+			ret = "Tainted value " + JSON.stringify(aargs) + ' '
+				+ JSON.stringify(sargs)+
+				" has been passed to " + f.name;
+		}
+		catch (e)
+		{
+			ret = "Tainted value has been written to " + f.name;
+		}
+		return ret;
+	}
+	switch (f)
+	{
+	case document.write:
+	case document.writeln:
+		if (sargs.map(isTainted).reduce((a,b) => a || b))
+			return {msg: genMsg()};
+	}
 };
 sandbox.dtaBrowser = new Browser();
 })(J$);
