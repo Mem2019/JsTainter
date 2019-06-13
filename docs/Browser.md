@@ -67,6 +67,22 @@ else
 
 The reason why `dtaBrowser.getField` does not return a `AnnotatedValue` object is that I do not want `Browser.js` to be dependent on `AnnotatedValue` class, which is implemented in `DynTaintAnalysis.js`.
 
+For sinks, everything is same except that only record will be added to `results`, but the function will not be returned.
+
+```javascript
+if (isTainted(sval))
+{
+	const ret = sandbox.dtaBrowser.putField(
+		abase, aoff, aval, sval, config);
+	if (typeof ret !== 'undefined')
+	{
+		addLogRec(this, getPosition(iid), ret.msg);
+	}
+}
+```
+
+
+
 ## Multiple Sources Implementation
 
 As I have mentioned in last chapter, we can use an array of boolean variable to represent multiple source, which can be further optimized to a number. In browser, this becomes more important, since user inputs can come from different sources. `MultSrcTaintLogic.js` is the file that implements multiple source taint propagation. The logic is almost same except `||` is changed to `|`, because now number is used to represent a boolean array, and bitwise `or` is same as applying `or` to every corresponding element of the boolean array. Another difference is `taintSource` function used to obtain the initial `taint information variable` for source, instead of just returning true, `id` argument is used as the shift amount. The code is shown below.
@@ -154,11 +170,15 @@ However, there are drawbacks for this approach: the complexity is `O(n)`. Anothe
 
 ## Sink
 
-There are two types of sinks. The first one is when field of global object is set, and the second one is native function that deserve notice. 
+There are two types of sinks. The first one is when field of global object is set, and the second one is native function that deserve notice. Although there are still many types of sinks, 
 
+### Global Object Field Set
 
+This include changing `window.location.href` and `document.cookie`. When they are modified to something tainted, message is recorded.
 
-For sink, the key is to log information instead of process, so unlike 
+### Native Function Sink
+
+This includes functions like `document.write`.
 
 # Browser Extension Todos
 

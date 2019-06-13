@@ -162,6 +162,7 @@ Browser.prototype.invokeFunSnk = function (f, abase, aargs, sbase ,sargs, isTain
 	{
 	case document.write:
 	case document.writeln:
+	case XMLHttpRequest.prototype.send:
 		if (sargs.map(isTainted).reduce((a,b) => a || b))
 			return {msg: genMsg()};
 	}

@@ -432,7 +432,7 @@ function TaintAnalysis(rule, config)
 		}
 		else
 		{
-			return taint !== rule.noTaint;
+			return taint !== rule.noTaint && typeof taint != 'undefined';
 		}
 	}
 	function isTainted(taint)
@@ -442,14 +442,14 @@ function TaintAnalysis(rule, config)
 
 	function getTaintResult(result, taint)
 	{
-		if (isUntainted(taint) || typeof taint == 'undefined')
+		if (isUntainted(taint))
 			return result;
 		else
 			return new AnnotatedValue(result, taint);
 	}
 
 	function mergeTaintsH(val, taints, outTaints)
-	{//pre: val and taints come from stripTaints function
+	{
 		outTaints.push(taints);
 		for (var k in taints)
 		{
@@ -703,7 +703,7 @@ function TaintAnalysis(rule, config)
 		if (typeof val == 'object' && val !== null)
 		{
 			var strippedVal = stripTaints(val);
-			return {result: new AnnotatedValue(strippedVal.values, strippedVal.taints)}
+			return {result: getTaintResult(strippedVal.values, strippedVal.taints)}
 		}
 	};
 	this.endExecution = function()

@@ -7,418 +7,72 @@ categories: jekyll update
 
 # Overview
 
-Unlike binary program, whose behavior is simple and easy to analysis, JavaScript is highly dynamic and very complex, thus hard to analysis. I will cover possible implementations of data structure of shadow value along with JavaScript variable, and their pros and cons. Also, here is some of my reflection about the cases that we need to consider when implementing dynamic taint analysis for JavaScript, possible ways to deal with them, and the drawbacks of these approaches.
-
-# Dynamic Analysis
-
-To perform dynamic taint analysis, we must be able to track and analyze every possible JavaScript operation, otherwise it is possible to miss some critical operations and produce false positive or false negative results. It is also required to trace information between operations, otherwise taint flow cannot be traced at all. When I was preparing the project, I found several possible ways that dynamic analysis can be performed. 
-
-## Debug Protocol
-
-The debug protocol is designed for remote debugger: for example, JavaScript IDE uses debug protocol to interact with JavaScript codes being executed in browser, and IDE can use debug protocol to step in, step out and continue until hitting breakpoint. We can also use this debug protocol to trace the program being analyzed and perform dynamic taint analysis. However, there are several problems.
-
-**Firstly**, the on-line resource of debug protocol development is rare. The only resource seems to be the official document, which is a API documentation instead of a step-by-step tutorial, thus a bit hard to understand.
-
-**Secondly**, I am not sure if debug protocol supports tracing every operation. For example, in step-in command in IDE, a statement `a = b * c + d` will be jumped over directly rather than separate multiplication and addition, but this is what we need for accurate dynamic taint analysis. Thus if debug protocol does not support such operation and I have spent too much time on it, it will be wasteful.
-
-Therefore, using debug protocol is too risky and not appropriate for my project.
-
-## Modifying JavaScript Engine for Analysis
-
-Since JavaScript is always executed by JavaScript engine, we can modify the code of JavaScript engine for dynamic analysis. However, here are several problems.
-
-**Firstly**, if analysis is performed in this way, user must use modified version of browser, which is too heavy compared to a  browser extension. In addition, the product will heavily bond to specific browser, so there would be no portability at all.
-
-**Secondly**, such implementation is hard. I need to understand JavaScript engine in advance before modifying its code, which might take long. Also, JavaScript is not only executed by interpreter, but it will also be compiled just-in-time when a section of codes is executed very frequently. This could make things very complicated since I would also need to modify the JIT compiler so that I can still analyze codes even if they are compiled in JIT, in order to prevent some false negatives.
-
-Therefore, the cumbersomeness and difficulty of this approach suggests this is not a good way.
-
-## Instrumentation
-
-Instrumentation is a common way to perform dynamic analysis. It modifies codes to be analyzed and insert the codes for analysis. For example, [Intel Pin Tool](https://software.intel.com/en-us/articles/pin-a-dynamic-binary-instrumentation-tool) is a dynamic code instrumentation tool for binary program. [AFL Fuzzer](http://lcamtuf.coredump.cx/afl/) also applies instrumentation technique to generate high code coverage for binary program. Although instrumentation for binary program is common, counterpart resources in field of JavaScript analysis is quite rare. Here are possible ways that JavaScript program can be instrumented.
-
-### Byte Code Level Instrumentation
-
-JavaScript byte code is a intermediate representation of JavaScript, and it varies among different browser engine. Because the final goal of this project is to build a chrome extension, the byte code that we may need to consider is byte code in V8, the JavaScript engine used by chrome. Since it is more like assembly than a high level language, the instrumentation in this level is a bit similar to binary instrumentation that I have discussed above. 
-
-However, unlike binary instrumentation, in which there are many resources on-line, JavaScript byte code instrumentation has rarely been investigated before. Also such low-level is too dependent on specific browser: for example, the instrumentation on V8 byte code cannot work at ChakraCore,  the JavaScript engine used by Edge. Therefore, this approach is not appropriate for my project. 
-
-### Source Code Level Instrumentation
-
-Source code instrumentation is to instrument through modifying JavaScript file, usually by proxy. Fortunately, there is one framework that provides such functionality, Jalangi2, which is a big advantage. Also, this does not depend on particular JavaScript engine in specific browser, so it is easier to migrate to browsers other than chrome. Therefore, this becomes my final choice of dynamic analysis, and I will explain this in detail in next section.
-
-
-
-# Jalangi2
-
-## Overview
-
-[`Jalangi2`](https://github.com/Samsung/jalangi2) is a dynamic analysis framework for JavaScript that supports dynamic analysis based on instrumentation. This framework can modify the source code of the program being analyzed and instrument code before and after each JavaScript operation. For example, before and after any JavaScript binary operators (e.g. `+`), user of Jalangi2 can instrument his own functions to inspect and modify the behavior of such operation. Since this framework has already implemented language-level preprocessing such parsing and instrumentation, developer who uses this framework does not have to worry about it. Instead, according to its [tutorial](https://manu.sridharan.net/files/JalangiTutorial.pdf), it is very easy to use this framework. Here is an example that instrument on the `binary` operator in JavaScript.
-
-```javascript
-//Analysis.js
-(function (sandbox)
-{
-function Analysis(rule)
-{
-	this.binaryPre = function (...) {...}
-	this.binary = function (...) {...}
-}
-sandbox.analysis = new Analysis();
-})(J$);
-```
-
-By setting these fields to the function we want, when binary operator such as `+` is executed, our functions will also be executed. The relative argument such as operands will be passed as argument, and we can also use return value of these functions to modify the dynamic behavior of the binary operator such as changing the result. 
-
-### Instrumentation
-
-As I just suggested, Jalangi2 works by source code level instrumentation. The input JavaScript source will be converted to instrumented JavaScript, which will then be run by the JavaScript interpreter. Since the instrumented JavaScript will call the callback functions that we have defined (e.g. `binaryPre` shown above), analysis can be performed by every possible JavaScript operation.
-
-In Jalangi2, every operation will be wrapped by a member function of `J$`, and this class can be regarded as the *main class* of Jalangi2. For example, binary operation would be wrapped by `J$.B`, and in this function, our instrumentation callback function is called and actual binary operation are performed. These functions not only wrap the operation but also are placed before or after some JavaScript statement. For example, `J$.Se` is placed before JavaScript file, and `J$.Fe` is placed before function body. In these functions our corresponding callbacks will also be called, if any. 
-
-### J$
-
-As I suggested above, this is the main class of Jalangi2. The `analysis` property need to be assigned by us, just as the example above shown. In addition, this class would be shared among all chained analysis file, and this feature can be used to export class. For example, I have implemented a `Utils` class that contains some utility functions. Since this is implemented in a separate file, we cannot use this class in another file. However, by using `J$`, we can easily export this class, as illustrated below.
-
-```javascript
-//Utils.js
-(function (sandbox)
-{
-	Utils.prototype.func2 = function() {...};
-	Utils.prototype.func1 = function() {...};
-	//define func1 and func2
-	sandbox.myUtils = new Utils();
-})(J$);
-//Analysis.js
-(function (sandbox)
-{
-	const utils = sandbox.myUtils;
-	function Analysis()
-	{
-		// ...
-		utils.func1(...); // use func1 somewhere
-		utils.func2(...); // use func2 somewhere
-		// ...
-	}
-	sandbox.analysis = new Analysis();
-})(J$);
-```
-
-### Run
-
-Here is the bash command that run the analysis. `ChainedAnalyses.js` is critical since it is the script that chains everything together.
-
-```bash
-node jalangi2/src/js/commands/jalangi.js --inlineIID --inlineSource --analysis jalangi2/src/js/sample_analyses/ChainedAnalyses.js --analysis Utils.js --analysis Analysis.js file_to_be_analyzed.js
-```
-
-
-
-Here is the full list of the JavaScript operations that can be instrumented, which already cover all possible JavaScript program behaviors.
-
-//todo, add pic and ref
-
-## [Shadow Value](https://mem2019.github.io/jekyll/update/2019/04/26/Jalangi2-Shadow-Value.html)
-
-`Shadow Value` is a concept formulated in [Jalangi paper](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.455.9073&rep=rep1&type=pdf). The key point is that there could be another shadow value associated with a variable. In the paper, `AnnotatedValue` class is used to denote the variable that has any shadow value along with it. The `value` field of this class is the original value of this variable, while `shadow` field is the shadow value associated with this variable. For example, if an integer variable `1337` has shadow value `true`, the variable will be an `AnnotatedValue` object with field `value` being `1337` and field `shadow` being `true`, denoted as `AnnotatedValue(1337, true)` (I will use this notation in the following report). This shadow value concept is important because `JsTainter` will use shadow value to record the taint state information about a variable, which is necessary in dynamic taint analysis.
-
-However, I found that mechanism of shadow value of `Jalangi2`, works differently from the one mentioned in this [paper](https://people.eecs.berkeley.edu/~ksen/papers/jalangi.pdf). The reason might be that the version is different: the paper covers `Jalangi1` while I am using `Jalangi2`. Of course, `JsTainter` can use `Jalangi1` instead of `Jalangi2`, but `Jalangi1` has not been maintained for many years, so using `Jalangi1` may have more risk of encountering bugs in the framework.
-
-In the paper (`Jalangi1`), it is suggested to use a `AnnotatedValue` to replace some variables, just as I discussed above, and as long as the variable is used for some operation, `actual(value)` is used to convert it to actual value for operation. For example, `actual(AnnotatedValue(1337, true)) === 1337`.  Then when our analysis callback function `analysis.binary` is called, `value` is passed as the arguments instead of `actual(value)`. The logic is shown as below, according to the pseudo-codes in the paper.
-
-```javascript
-//definition of AnnotatedValue
-function AnnotatedValue(val, shadow)
-{
-	this.val = val;
-	this.shadow = shadow;
-}
-function actual(val)
-{
-	return val instanceof AnnotatedValue ? val.val : val;
-}
-//when executing instrumented code of binary operator
-var result = actual(left) op actual(right) //call `actual` before used as operands 
-if (analysis && analysis.binary)//original `left` and `right` are passed
-    analysis.binary(op, left, right, result)
-```
-
-However, in Jalangi2, things works differently: here is the pseudo-code representing the source code logic of `Jalangi2` when binary operator is handled.
-
-```javascript
-
-function B(iid, op, left, right, flags) {
-	var result, aret, skip = false;
-
-	if (sandbox.analysis && sandbox.analysis.binaryPre) {
-		aret = sandbox.analysis.binaryPre(iid, op, left, right);
-		if (aret) {
-			op,left,right,skip = aret.op,aret.left,aret.right,aret.skip;
-		}//a `binaryPre` is added
-	}
-	if (!skip) {
-		result = left op right;
-	}//no `actual()` being applied before using as operands
-
-	if (sandbox.analysis && sandbox.analysis.binary) {
-        /*
-        `left` and `right` being passed to our `analysis.binary` handler
-        are same as ones used as operands,
-        which is different from the approach mentioned in paper
-        */
-		aret = sandbox.analysis.binary(iid, op, left, right, result);
-		if (aret) {
-			result = aret.result;
-		}
-	}
-	return (lastComputedValue = result);
-}
-```
-
-Therefore, it seems that `AnnotatedValue` class is not supported in `Jalangi2`, but instead, shadow value is associated with a object reference. `SMemory` is a mechanism that support shadow value feature in `Jalangi2`. However, the drawback of this approach is that we cannot have a shadow value assoicated with primitive value, including `string`. Therefore, since the approach of `Jalangi1` mentioned in the paper is better for me to use, I will define `AnotatedValue` by myself, and then define `analysis.binaryPre` to let `skip === true`, and perform calculation inside `analysis.binary` instead. Centainly, I will do this for all operations, not only binary operator.
-
-Here is the pseudo-codes that describe what I am thinking about.
-
-```javascript
-this.binaryPre = function(iid, op, left, right)
-{
-	return {op:op,left:left,right:right,skip:true}//skip
-}
-this.binary = function(iid, op, left, right, result)
-{
-	var result;
-	var aleft = actual(left);
-	var aright = actual(right);
-
-	result = left op right;
-	//use left and right to perform analysis
-
-	return {result : result} 
-}
-```
-
-In this way we can use the shadow value in the same way as `Jalangi1`. 
-
-However, such operation is still not perfectly correct. For example, `actual([AnnotatedValue(1337, true)])` will still give `[AnnotatedValue(1337, true)]` instead of `[1337]`, because `Array` is not an `AnnotatedValue` instance even if there is an `AnnotatedValue` instance as the array element. We need something that traverse the object recursively and replace all `AnnotatedValue` instances with their `value` fields, and recover them after operation is done. I will discuss this later when `strpTaints` and `mergeTaints` function implementations are covered.
-
-## Location
-
-Jalangi2 has provided an `iid` argument for each instrumentation callback function, which is the `Static Unique Instruction Identifier` that is used to specify the specific instruction that is being instrumented currently. It can also be used to specify the position of the instruction: `J$.iidToLocation(J$.getGlobalIID(iid))` is the code that can be used to get the position of current instruction being analyzed in the original codes, where `J$` is a global variable used by `Jalangi2`. 
-
-The returned position is a string, with format `([absolute path of js file]:[starting line number]:[starting column number]:[end line number]:[end column number])` in `node.js`. For example, if there is an assignment `a = b + c` at line 17, and at the callback instrumentation function of writing the value into `a` (e.i. `write`), the position being obtained will be `/path/to/file.js:17:1:17:2`, while `1` and `2` stand for `a` starts at column 1 and ends at column 2. We can use such position string to identify the position of a particular instruction in original codes.
-
-However, when instrumentation is run in browser, position with different format appears, after reading the source codes of Jalangi2, I found this piece of code that generates the position string in `iidToLocation.js`.
-
-```javascript
-arr = ret[iid];
-if (arr) {
-	if (sandbox.Results) {
-		return "<a href=\"javascript:iidToDisplayCodeLocation('"+gid+ \
-			"');\">(" + fname + ":" + arr[0] + ":" + arr[1] + \
-			":" + arr[2] + ":" + arr[3] + ")</a>";
-	} else {
-		return "(" + fname + ":" + \
-			arr[0] + ":" + arr[1] + ":" + \
-			arr[2] + ":" + arr[3] + ")";
-	}
-} else {
-	return "(" + fname + ":iid" + iid + ")";
-}
-```
-
-Therefore, as shown above, there are 3 kinds of position string format: the first one gives `gid`, file name and information about line and column; the second one does not gives `gid` but still gives file name and information about line and column, which is the format that I have illustrated above; and the third one only gives file name and `iid`, because `arr` that should contains information about line and column now is `undefined`. During my project I have not encountered the third case, so I think that one is a bit unrelated to the project. As for the other 2 cases, although what Jalangi2 chooses to provide is a string, what I need is actually these variables used to generate this string. Thus, instead of obtaining such string and parse it back by my myself, I would choose to modify the code of Jalangi2 to make `iidToLocation` return a JSON instead of a string. Here is the modified version of code.
-
-```javascript
-arr = ret[iid];
-if (arr) {
-	if (sandbox.Results) {
-		return {gid:gid, fname:fname, pos:arr};
-	} else {
-		return {fname:fname, pos:arr};
-	}
-} else {
-	return {fname: fname, iid:iid};
-}
-```
-
-The information being returned is exactly same, except now the form is in JSON instead of a string.
-
-## Bug
-
-Even if Jalangi2 is an great framework, it has some bugs since it has not been maintained for 3 years. Therefore, I have modified some codes in Jalangi2 to fix some bugs.
-
-### Constant Declaration
-
-**Cause**
-
-In JavaScript, developer can declare a constant that cannot be modified once being assigned by `const a = something`. However, we cannot access the variable before this statement.
-
-```javascript
-alert(a); 
-//cause ReferenceError instead of returning `undefined`
-const a = 1 + f(a); // this also causes ReferenceError 
-```
-
-In the code, variable `a` are used before declaration and assignment, which causes `ReferenceError`. This JavaScript feature leads to a bug in Jalangi2, which is caused by improper instrumentation. The bug is triggered when any constant declaration is instrumented by Jalangi2, for example `const x = "1"`. When this declaration is instrumented, following instrumented JavaScript will be generated.
-
-```javascript
-J$.N(41, 'x', x, 0); // x is used before statement `const x`
-const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), x, 3)); // x is also used here
-```
-
-As I mentioned in last section, `J$` is the main class of Jalangi2, and its member functions are called. However, the problem is that variable `x` is used before it is actually declared, which causes `ReferenceError` when the instrumented version is run. 
-
-By the way, declaration like `var a = a` (where `a` has not been declared before) will not cause this problem and `a` will equal to `undefined` after this statement, and this is the reason why `var` declaration does not raise this error.
-
-**Fix**
-
-My approach to fix this error is very simple. The reason why instrumented version of JavaScript file access the variable before declaration is to obtain the original value of the variable, as the documentation of Jalangi2 suggests. However, this functionality is not actually very useful, at least not useful for my project. Therefore, if we can prevent such early access of variable (e.g. change that argument to something else), the `ReferenceError` can be prevented. To be specific, we need to change `x` passed as argument in both `J$.N` and `J$.W`.
-
-In Jalangi2, file `src/js/instrument/esnstrument.js` implements JavaScript source code instrumentation, and we need to find the piece of codes that generates the instrumented JavaScript, and modify the arguments that cause error. The idea is that when the corresponding instrumented code in string form is generated, method name `".N"` and `".W"` must be referenced, so I decided search such string in that file, and these 2 lines are interesting and possibly relate to instrumented code generation.
-
-```javascript
-var logInitFunName = JALANGI_VAR + ".N";
-var logWriteFunName = JALANGI_VAR + ".W";
-```
-
-We may need to debug the Jalangi2 to make things more clear, so I have used a shortest code that generate the `ReferenceError`, namely `const x = "1"`, to be instrumented. By setting the break point, we can easily find that `JALANGI_VAR` equals to `"J$"`. Then after looking for the cross reference, these variables are used in this way, which is very likely to be instrumented code generation. There are several pieces of codes like this, but they are essentially same, so I will only show and explain one of them here.
-
-```javascript
-logInitFunName + "(" + RP + "1, " + RP + "2, " + RP + "3, " + ... 
-```
-
-However, if I set a breakpoint here, I found that value of `RP` equals to `"J$_"`, so the result of string concatenation is something like `"J$.N(J$_1, J$_2, J$_3, 0)"` which is not same as result instrumented code. However, this result will be passed to function `replaceInStatement`, which I think is the function that replaces the `J$_X` by the real argument. However, this is not important, the arguments can already be modified now although a bit hack: `J$_3` corresponds to the third argument `x` that causes `ReferenceError`, so we modify it to something else such as `J$_2`, so the third argument will become `'x'` now. The same thing applies for all other references of `logInitFunName` and `logWriteFunName`. This is the instrumented codes after modifying Jalangi2 code, in which all `x`s are replaced by `'x'`.
-
-```javascript
-J$.N(41, 'x', 'x', 0);
-const x = J$.X1(25, J$.W(17, 'x', J$.T(9, "1", 21, false), 'x', 3));
-```
-
-# Design
-
-## Choice
-
-In the background chapter, I have covered 3 approach: dynamic taint analysis, static taint analysis and blended taint analysis. The blended taint analysis is simply improved version of static analysis, so the key point is to compare blended taint analysis with dynamic taint analysis. 
-
-Although blended analysis gather the dynamic information firstly, it still applies static analysis to get the final result. By contrast, dynamic analysis traces the program and perform analysis as it runs, which should give higher accuracy. The reason is that the dynamic information that can be gathered by blended analysis in first stage is not informative enough: since the analysis and dynamic tracing is done separately, the dynamic information that can be used by static analysis is limited. By contrast, dynamic analysis can provides almost all dynamic information because the analysis is done along with the dynamic tracing.
-
-For example, when array and object are used to store tainted user input, the blended taint analysis might not function well.
-
-```javascript
-const hash = window.location.hash; // hash is tainted
-const obj = {hash: hash};
-function get(obj, prop)
-{
-	return obj[prop];
-}
-const r = get(obj, "hash"); // equivalent to obj.hash
-```
-
-If blended analysis is used here, it is hard to identify `r` is actually fetched from `obj.hash` unless using complicated program analysis techniques; however, using dynamic taint analysis, since analysis is performed along with program tracing, it is easy to figure out `obj.hash` is returned and assigned to `r`, which should be tainted. 
-
-However, there is an advantage of blended analysis: the implicit flow can be detected. Since dynamic analysis can only perform analysis for every JavaScript operation separately, it is hard to view and analyze the JavaScript codes as a whole to figure out implicit flow. By contrast, in static phase of blended analysis, if good program analysis technique is applied, it is possible to detect implicit flow. Nonetheless, as the program logic becomes complicated, program analysis can also get wrong. Therefore, considering the difficulty of performing program analysis on JavaScript and the uncertain effectiveness of automatic implicit flow detection, I would still favor dynamic analysis rather than blended analysis.
-
-## Overall Structure
-
-Here is the UML graph of my project. //todo
-
-As I have suggested in background chapter, everything is based on Jalangi2 framework, thus every class is a field of `J$`. 
-
-Field `analysis` is an instance of class that implements the main dynamic taint analysis logic, which is implemented in file `DynTaintAnalysis.js`. In this class, callback functions specified by Jalangi2 that will be called in runtime dynamic analysis are defined and implemented. The `results` field is used to store the result of taint analysis, which will be covered later.
-
-Field `dtaTaintLogic` is the actual implementation of taint propagation rule for the particular type of `taint information variable`, which will be covered later. In other word, the `template method design pattern` is used here: if I want to change the type of `taint information variable`, ideally I only I need to change the instance stored in `dtaTaintLogic` field, without modifying codes in other files, which is a good software engineering practice.
-
-Field `dtaBrowser` is some browser-side handling codes. This is separated from `DynTaintAnalysis.js` because I want the code to be both runnable in `node.js` and in browser. This is also a `template method design pattern`, and I will cover the detail about this when browser integration is discussed. 
-
-Field `dtaUtils` is a utility class in which some utility functions are implemented. These functions could not only be used by `DynTaintAnalysis.js`, but can also be used by other files, because this is simply a low-level utility class.
-
-Field `dtaConfig` is a configuration instance used to specify the some behaviors of taint analysis algorithm. This will be covered in detail later.
-
-# Design of Shadow Value
-
-## Taint Information Variable
-
-`Taint Information Variable` is used to record the taint state of basic variable types such as number and single character. I will discuss how taint information variable, which are used to describe basic type only, can be used to describe taint state of complex types such as `Object` in next subsection. In this subsection, I will discuss several design choices about taint information variable. 
-
-### Boolean Variable
-
-This is the simplest design: the shadow value is simply `true` or `false`. `true` if the variable is tainted, and `false` if the variable is not tainted. This is the easiest design choice to implement. In the following report, if I am going to make an example of `AnnotatedValue`, I will use this design choice in the example because this is simple and makes the example easy to understand.
-
-### Boolean Array for Sources
-
-User inputs of web page in browser can come from different sources. For example, user input can come from argument in URL and `<input>` HTML label. Because of that, it is necessary to be able to identify the source of the taint given a tainted variable. 
-
-To implement this, we can use a boolean array, in which different indeces denotes taint state from different source. For example, element at index 0 can be taint state from source URL argument, while element at index 1 can be the taint state from `<input>` HTML label. If one array element at particular index is `true`, it means current basic variable is tainted by the source corresponding to that index. 
-
-There is also an possible optimization: instead of using boolean array, we can use an integer instead, where each bit correspond to an original boolean variable in array. Such optimization saves space and time, but exerts limitation on number of sources: maximum 64 number of source if the integer is only 64-bit wide, for example.
-
-### Boolean Array for Bits
-
-Instead of having only one boolean variable for an integer, such array traces the taint information for every bit of the integer. This can be used to handle edge case of bit operation such as `&` and `|`. For example, the following code may cause false positive if we simply use a boolean variable to record the taint information.
-
-```javascript
-var t1,t2,r;
-//`t1` and `t2` are tainted integer
-t1 = t1 & 0xff;
-t2 = t2 & 0xff00;
-r = t1 & t2;
-```
-
-In this example, `r` must always be `0` whatever what `t1` and `t2` are, but if only a boolean variable is associated with the integer, false positive will be caused. If we taint the result as long as one of the operands are tainted (which is a common design), obviously `r` will be falsely tainted. However, if we trace the taint information at bit level, only` 0-7 bits` of `t1` and `8-15 bits` of `t2` are tainted at the final operation. Noting untainted bits to be all zeros, dynamic taint analysis can give the result that finally non of the bit in `r` is tainted.
-
-Such boolean array can also be optimized to integer like `Boolean Array for Sources`. In addition, since such design is independent from boolean array for sources, they can be combined so that the `taint infomation variable` is a 2D boolean array, although sounds very expensive.
-
-However, tracing at bit level is expensive and unnecessary. Cases like the example above rarely occur so it is not worthy to have such expensive design. To solve this problem without tracing taint infomration in bit level, we can log message when dynamic taint analysis is not sure about the result, and allow user customization about taint propagation rule for special cases, which will be covered later. //todo
-
-### Taint Level
-
-This is an "soft" version of boolean variable. Unlike boolean variable which can only be `true` or `false`, tainted level is a floating point number that range from 0 to 1. Value 1 means the variable along with this shadow value is fully tainted. In other word, the variable can be fully controlled by user. Value 0 means the variable is not tainted and cannot be controlled by user. The value in between means the variable can be controlled by user, but cannot be fully controlled by user. 
-
-For example, there is a number with taint level 1, say `AnnotatedValue(1337, 1.0)`, and is converted to string, so the result is `"1337"`. However, what taint information variable should I assign to each character? If a boolean strategy is used, they are all `true`, which makes sense but is not completely accurate, because user can only control the string within the range `'0'-'9'`, and this is different from a string that can be fully controlled. This is where `taint level` comes, the taint level for this string should be somewhere between 0 and 1.
-
-Nonetheless, specific rule for this strategy need more investigation: for example, what specific formula should be applied to calculate taint level as the tainted variable propagates? The details can give rise to many problems, so this strategy should be regard as extension.
-
-### Symbolic Expression
-
-This is actually not about taint analysis but about symbolic execution. Instead of just recording a state of taint, whole expression is traced. I have covered some of this when [this paper](todo) is discussed in background section. 
-
-However, different from normal symbolic execution which will result in multiple states when a symbolic expression is used in conditional jumps, my current code does not support such multiple states, because different implementation of taint variable is simply different implementation of `dtaTaintLogic` field in `J$`. The main taint analysis logic in `DynTaintAnalysis.js` (will be discussed later) does not vary as the implementation of taint information variable changes, and this file is not designed to have multiple states. 
-
-Therefore, current strategy could only be to log the expression on both sides when a symbolic expression is used in conditional jumps.
-
-## Shadow Value for Different Types
-
-The `taint information variable` discussed in last subsection can only be used to describe basic types. However, we need to consider cases like `Object`, `Array` and `String` that are not appropriate to just have one `taint information variable`.
-
-### String
-
-The reason why it is not good to mark the whole string as tainted or not is that part of the string can be affected by user while part of the string cannot. For example, user can control the argument field of an URL, which should be marked as tainted, but cannot control the domain field, which should not be marked as tainted. Therefore, shadow value of `String` is an array of `taint information variable` whose length is same as the length of the string. For example, `AnnotatedValue("AABB", [true,true,false,false])` denotes that `"AA"` part is tainted but `"BB"` part is not tainted.
-
-### Object and Array
-
-Obviously it is not accurate to mark the whole object or array as tainted or not, because values stored in the object or array are independent and they can always be modified. For example, if `obj` is an `Object`, after executing `obj["a"] = "b"` and `obj["t"] = tainted_string`, using one `taint information variable` only, we cannot track taint states of these 2 fields independently. 
-
-Therefore, the better design choice is to taint the values inside `Object` or `Array`, rather than taint the object or array itself as a whole. For example, if we have a array of integers and all of them are tainted, we do not taint the array to a `AnnotatedValue` with actual value as an array, but taint each individual elements such that the array becomes an array of `AnnotatedValue` with actual value as an integer (`[AnnotatedValue(1,true), AnnotatedValue(2,true)]` instead of `AnnotatedValue([1,2], true)`). 
-
-Originally I employed such design. However, later on, I found that this design is still naive, so I then reconstructed my code. This problem is when the array is used in some operation, sometimes the taint information must be stripped before using the array. I will cover the detail about it later in *taint stripping and merging* subsection. Therefore, an alternative design is to still wrap the object or array with `AnnotatedValue`, but use an `Object` to describe taint state instead of a single `taint information variable`. Using the example above, in current design, we will have an `AnnotatedValue([1,2], {'0':true, '1':true})`. I will also discuss the details later.
-
-Nonetheless, we cannot make key tainted, since in JavaScript only `String` or `Number` type is allowed to be used as key. Even if we assign value using `AnnotatedValue` as the key, it will still be casted to `String` before being used as key. However, the drawback is that sometimes key should have been tainted. For example, if argument passed to `JSON.parse` are a string that is totally tainted (e.i. every character is tainted including keys), the key should be tainted intuitively, but that's not the case in current design. Fortunately, usually websites will not use key to propagate information, so this drawback does not hurt so much.
-
-Note that, since `null` is also an `Object`, so it would not be tainted.
-
-### Basic types
-
-For any other basic types, such as `Number` and `Boolean`, have shadow value with only one `taint information variable`. This includes the case like `undefined` and `NaN`.
-
-### Function
-
-Function variable is never tainted, since it is very rare for function to be controllable by user.
-
-# Taint Analysis Implementation
-
 JavaScript is a dynamic and weakly-typed language. Due to such feature, the taint analysis implementation is much more complicated than dynamic taint analysis over binary executables. In this section I will discuss my implementation for JavaScript, which I have employed in this project. 
 
-## Taint Stripping and Merging
+## Common Functions
+
+### `isTainted`
+
+This is the function that returns `true` if the shadow value is tainted, and returns `false` if not. The shadow value can be `taint information variable` for basic types, and array of `taint information variable` for string types, and object for object types. These 3 cases are also illustrated in codes.
+
+```javascript
+function isTaintedH(taint, outArr)
+{
+	if (Array.isArray(taint))
+	{// original value is string type
+		for (var i = 0; i < taint.length; i++)
+		{
+			if (taint[i] !== rule.noTaint)
+				return true;
+		}
+		// return false only if no character is tainted
+		return false;
+	}
+	else if (typeof taint === 'object')
+	{// original value is object
+		outArr.push(taint);
+		for (var k in taint)
+		{
+			if (outArr.indexOf(taint[k]) === -1)
+			{// prevent infinite recursion
+				//recursion
+				if (isTaintedH(taint[k], outArr))
+					return true;
+			}
+		}
+		outArr.pop();
+		// return false iff nothing inside is tainted
+		return false;
+	}
+	else
+	{// original value is basic type
+		return taint !== rule.noTaint && typeof taint != 'undefined';
+	}
+}
+function isTainted(taint)
+{
+	return isTaintedH(taint, []);
+}
+```
+
+The reason why there is a variable `outArr` is to prevent infinite recursion caused by circular reference. For object with circular reference, its shadow value is also an object with circular reference, so it is required to record references of object that does not need to be recursed again, and perform recursion call only if an object reference is not in the `outArr`.
+
+### `getTaintResult`
+
+When a `AnnotatedValue` object is going to be returned, some optimization is required: if the shadow value is not tainted at all, `AnnotatedValue` wrapper is not needed so the value can be returned directly. Therefore, `getTaintResult` is implemented: given value and shadow value, return `AnnotatedValue` object if it is really needed.
+
+```javascript
+function getTaintResult(result, taint)
+{
+	if (!isTainted(taint))
+		return result; // return the value only
+	else
+		return new AnnotatedValue(result, taint); 
+		// wrap them with AnnotatedValue and return it
+}
+```
+
+# Taint Stripping and Merging
 
 As I mentioned when discussing shadow value of object and array, there are 2 possible design choices: for example, we can have either `[AnnotatedValue(1,true), AnnotatedValue(2,true)]` or `AnnotatedValue([1,2], {'0':true, '1':true})`, where the second one is more favorable. However, even if second form is a more favorable design, sometimes the first form is easier to process. Therefore, we need some functions that enable us to switch between these 2 forms. To make it simple, I will call the first form as `merged form` and the second form as `stripped form` in the following section.
 
@@ -504,11 +158,83 @@ Similar to `stripTaints` function, there are also some points:
 
 ### Implementation
 
-//todo: maybe no todo
+This is the codes for function `stripTaints`
 
-The implementation for `stripTaints` is clear and simple, we check the variable type first
+```javascript
+function stripTaintsH(val, outArrs)
+{
+	var aval = actual(val);
+	if (typeof aval == 'object' && aval === val)
+	{// only perform stripping when `val` is a merged-form object
+		outArrs.push(aval);
+		// push the object being processed to prevent infinite recursion
+		var taints = {};
+		for (var k in aval)
+		{
+			if (outArrs.indexOf(val[k]) === -1)
+			{ // iterate unprocessed elements
+				var stripped = stripTaintsH(val[k], outArrs); // recursion
+				if (isTainted(stripped.taints))
+					taints[k] = stripped.taints;
+					// create taint only if the variable is tainted
+				val[k] = stripped.values;
+				// update value
+			}
+		}
+		outArrs.pop();
+		return {taints:taints, values:val};
+	}
+	else
+	{// variable is basic type
+		return {taints:shadow(val), values:actual(val)};
+	}
+}
+function stripTaints(val)
+{
+	return stripTaintsH(val, []);
+}
+```
 
-## Result of Taint Analysis
+The implementation is very similar to depth-first-search algorithm. The `stripTaintsH` is a helper function that given a variable in `merged form` and `outArr` that is used to record references of already recursed object, and it returns `taints` and `values` which are `stripped form`. 
+
+The codes for `mergeTaints` are very similar, which is also a depth-first-search algorithm.
+
+```javascript
+function mergeTaintsH(val, taints, outTaints)
+{
+	outTaints.push(taints);
+	for (var k in taints)
+	{
+		if (typeof taints[k] == 'object' && !Array.isArray(taints[k]))
+		{//recurse for unseen non-basic type taint
+			if (outTaints.indexOf(taints[k]) === -1)
+				val[k] = mergeTaintsH(val[k], taints[k], outTaints);
+		}
+		else if (isTainted(taints[k]))
+		{//merge directly for basic types
+			val[k] = new AnnotatedValue(val[k], taints[k]);
+		}
+	}
+	outTaints.pop();
+	return val;
+}
+
+function mergeTaints(val, taints)
+{
+	if (typeof taints == 'object' && !Array.isArray(taints))
+	{// if taints are object other than Array, `val` should be object
+		return mergeTaintsH(val, taints, []);
+	}
+	else
+	{// for basic types including string, return directly
+		return getTaintResult(val, taints);
+	}
+}
+```
+
+
+
+# Result of Taint Analysis
 
 Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called `results`, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 3 types of record: `read`, `write` and `log`.
 
@@ -596,6 +322,8 @@ const addLogRec = function(analysis, pos, msg)
          pos: pos.pos, msg: msg});
 };
 ```
+
+# Taint Propagation
 
 ## Binary Operators
 
