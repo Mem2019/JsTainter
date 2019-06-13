@@ -110,6 +110,8 @@ Nonetheless, we cannot make key tainted, since in JavaScript only `String` or `N
 
 Note that, since `null` is also an `Object`, so it would not be tainted.
 
+There is also another point to note: as long as an object is created, it must be wrapped by `AnnotatedValue`. For example, when an object literal is assigned to a variable (e.g. `var o = {}`), in the `analysis.literal` callback, we must change `{}` to `AnnotatedValue({}, {})`. The reason is when `putField` is applied to any object, base variable cannot be modified in the `analysis.putField` callback function. Even if the assigned value is tainted, we are not able to change the base to `AnnotatedValue` anymore. Therefore to prevent such cases, objects created by JavaScript program should all be wrapped by `AnnotatedValue`.  
+
 ### Basic types
 
 For any other basic types, such as `Number` and `Boolean`, have shadow value with only one `taint information variable`. This includes the case like `undefined` and `NaN`.

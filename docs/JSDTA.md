@@ -232,8 +232,6 @@ function mergeTaints(val, taints)
 }
 ```
 
-
-
 # Result of Taint Analysis
 
 Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called `results`, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 3 types of record: `read`, `write` and `log`.
@@ -714,23 +712,47 @@ The native functions are JavaScript built-in functions. These do not have to be 
 
 Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression.
 
-```
-/function a-zA-Z_()[ \t\n]{[ \t\n][native code][ \t\n]}/
-```
-
-//todo: may delete this. Note that the reason why I choose `Function.prototype.toString` is to prevent the case when `toString` of the object . The reason is that the code that `JsTainter` is analyzing might be malicious. It can rewrite the `toString` method of the variable being called as function, so that the identification of native function might not work as expected, and this might also cause security issue. The example of this kind of attack is shown below.
-
 ```javascript
-var f = {};
-f.toString = function () {return "hacked"}
-f();
+/function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/
 ```
 
 ### Native Function Call Handler
 
 In `Jalangi2` framework, we can set `invokeFunPre` and `invokeFun` fields of `analysis class` as function handlers, and they will be called before and after any function call is made in the program being analyzed, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are wrapped by `AnnotatedValue`. Thus, instead, the function is called in `invokeFun` handler by `JsTainter`.
 
-In `invokeFun` handler, we firstly check if `f` (the variable being called) equals to specific strings, if so, some assertion function is called. This piece of codes is used for testing purpose, which will be covered in subsequent section, but this code will be removed in the final product. Then we try to check if the function is native function. If it falls into the category of native function, a big `switch` statement will be used to check which native function `f` is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function.
+In `invokeFun` handler, we firstly check if `f` (the variable being called) equals to specific strings, if so, corresponding assertion function is called. This piece of codes is used for testing purpose, which will be covered when evaluation strategy is covered, but this code will be removed in the final product. Then we try to check if the function is native function. If it falls into the category of native function, a big `switch` statement will be used to check which native function `f` is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function. The pseudo code is shown below.
+
+```javascript
+if (isNative(f))
+{
+	switch (f)
+	{
+		case String.prototype.substr:
+		//....
+		case String.prototype.charAt:
+		//....
+		/*Other native funtions*/
+	}
+}
+else
+{
+	//...
+}
+```
+
+### Function Call Implementation
+
+Sometimes, native function would be called with `new`, such as `new XMLHttpRequest`. Therefore, when `isConstructor` argument is `true`, the function need to be called as constructor. Therefore using `.apply` is not appropriate. Since in `analysis.js`, there is already a function `callFun` being defined, in which constructor is also implemented, so we can modify codes of Jalangi2 and export this function by assigning it to field of `analysis` and call it in `analysis.invokeFun`.
+
+```javascript
+//in analysis.js
+sandbox.callFunExport = callFun;
+```
+
+```javascript
+//in invokeFun callback at DynTaintAnalysis.js
+const callFun = sandbox.callFunExport;
+```
 
 ### Native Function Rules
 
@@ -847,11 +869,9 @@ This is the function that converts the string into URL encoding if necessary.
 
 There are 3 cases: if the character does not have to be converted into URL encoding, it will be left unchanged; if the character need to be encoded but is smaller than `0x100`, it will be converted to `%XX`; if the character need to be encoded but is larger than `0x100`, it will be converted to `%uXXXX`. For the first case, the taint information is left unchanged; for the second case, the taint information is copied 3 times; and for the third case, the taint information is copied 6 times.
 
-### Rules of Different Native Functions
-
-In this subsubsection I will cover the design of rules
-
 ### User Defined Function Call
+
+For user defined function call, what we need to do is simply 
 
 ### Constructor
 
@@ -942,7 +962,3 @@ Note that these 2 pieces of codes are in different files. The first code piece i
 2. add other operation handling if they are commonly used in real world
 
    e.g. getfield, other native functions, e.g. String/Numer/Array/JSON methods
-
-3. 
-
-5. 
