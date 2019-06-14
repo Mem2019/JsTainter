@@ -132,7 +132,52 @@ There are many test cases, and I will discuss them one by one.
 
 # Evaluation on Website
 
+In this section I am going to evaluate my analysis using web JavaScript program instead of `node.js` program.
 
+# Weakness
+
+## Implicit Flow
+
+To detect implicit information flow, JavaScript must be analyzed from high-level perspective. However, since I have applied pure dynamic analysis, analysis can only be performed for each individual JavaScript operation. Therefore, automatic detection of implicit flow is not possible.
+
+## Unable to Track Taint of Native Object Fields
+
+In JavaScript, there are some native objects. For example, `Error` is the object that is used to throw an exception, and can be used in this way:
+
+```javascript
+try
+{
+	throw new Error("some message");
+}
+catch (e)
+{
+	console.log(e.message);
+}
+```
+
+There might be cases that the string passed into `Error` is tainted. However, unlike non-native classes, Jalangi2 cannot instrument into constructor of `Error`, thus unable to tackle the taint state of `message` field. Thus, false negative would be produced.
+
+## Unable to Execute Codes with Lambda Function
+
+This is actually a problem from Jalangi2 instead of JsTainter. In Jalangi2, lambda expression is wrongly instrumented: the parameters of lambda expression are instrumented like variable, which causes JavaScript grammar to be wrong. For [example](https://github.com/Samsung/jalangi2/issues/149), when expression `const lambda = (a,b) => a+b;` is instrumented, `(a,b)` part would be instrumented to `(J$.R(81, 'a', 'a', 1), J$.R(89, 'b', 'b', 1))`, which is certainly wrong because this is not variable read and should not be modified, just like `(a,b)` part in `function (a,b) {return a+b}`.
+
+## Detectable by Program being Analyzed
+
+For some JavaScript programs, anti-debug techniques are applied to prevent people from reverse engineering the product. For example, JavaScript program can convert function to string and check if the function is modified.
+
+```javascript
+function some_func() { /*code that does not want to be modified by reverse engineer*/ }
+const correct_crc = 0x708D2F22; /* crc32 value of String(some_func) */
+function crc32(str) { /*code that implements crc32 hash algorithm*/ }
+if (crc32(String(some_func)) != correct_crc)
+	throw Error("Hack3r detected!")
+```
+
+If `some_func` function is instrumented by Jalangi2, the CRC-32 value will a become different one, so an exception will be thrown, which means the behavior of the program becomes different after instrumentation. This is not desirable.
+
+## Prototype Poisoning
+
+In current implementation, prototype poisoning is not properly handled. 
 
 1. eval on self written web site
 2. eval on web CTF challenge?

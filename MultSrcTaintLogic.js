@@ -61,6 +61,10 @@
 		ret = t;
 		return ret;
 	};
+	TaintUnit.prototype.unescapeTaint = function (ts)
+	{
+		return ts.reduce((a,b) => a | b);
+	};
 	TaintUnit.prototype.getFieldTaint = function (elemT, idxT)
 	{//todo: maybe need to be changed for more option
 		var ret;

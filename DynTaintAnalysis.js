@@ -774,7 +774,7 @@ function TaintAnalysis(rule, config)
 		if (Utils.isNative(f))
 		{
 			var aargs = actualArgs(args), abase = actual(base);
-			var sv, ret, taints;
+			var sv, ret, taints, j;
 
 			ret = sandbox.dtaBrowser.invokeFunSrc(f, abase, aargs);
 			if (typeof ret != 'undefined')
@@ -873,8 +873,8 @@ function TaintAnalysis(rule, config)
 				abase = actual(args[0]);
 				ret = callFun(f, base, [abase], isConstructor, iid);
 				sv = [];
-				var j = 0;
-				for (var i = 0; i < taints.length; i++)
+				j = 0;
+				for (let i = 0; i < taints.length; i++)
 				{
 					if (ret[j] === '%')
 					{
@@ -900,6 +900,53 @@ function TaintAnalysis(rule, config)
 					{
 						sv.concat(rule.escapeTaint(taints[i]));
 						++j;
+					}
+				}
+			}
+			break;
+			case unescape:
+			{
+				const isHex = Utils.isHex;
+				taints = getTaintArray(args[0]);
+				abase = actual(args[0]);
+				ret = callFun(f, base, [abase], isConstructor, iid);
+				sv = [];
+				for (let i = 0; i < abase.length;)
+				{
+					if (abase[i] === '%')
+					{
+						if (abase[i+1] === 'u' &&
+							isHex(abase[i+2]) && isHex(abase[i+3]) &&
+							isHex(abase[i+4]) && isHex(abase[i+5]))
+						{
+							const tmp = taints.slice(i, i+6);
+							if (config.logWhenUnescapeDiffer &&
+								!Utils.allSame(tmp))
+							{
+								addLogRec(this, position, "unescape element different");
+							}
+							sv.push(rule.unescapeTaint(tmp));
+							i += 6;
+						}
+						else if (isHex(abase[i+1] && isHex(abase[i+2])))
+						{
+							const tmp = taints.slice(i, i+3);
+							if (config.logWhenUnescapeDiffer &&
+								!Utils.allSame(tmp))
+							{
+								addLogRec(this, position, "unescape element different");
+							}
+							sv.push(rule.unescapeTaint(tmp));
+							i += 3;
+						}
+						else
+						{
+							sv.push(taints[i++]);
+						}
+					}
+					else
+					{
+						sv.push(taints[i++]);
 					}
 				}
 			}
@@ -973,10 +1020,10 @@ function TaintAnalysis(rule, config)
 			addLogRec(this, pos, "Tainted offset");
 		}
 
-		ret = sandbox.dtaBrowser.getField(abase, aoff);
+		ret = sandbox.dtaBrowser.getField(abase, aoff, config);
 		if (typeof ret != 'undefined')
 		{
-			return new AnnotatedValue(ret.ret, ret.sv);
+			return {result:getTaintResult(ret.ret, ret.sv)};
 		}
 		else
 		{
@@ -1022,9 +1069,12 @@ function TaintAnalysis(rule, config)
 			{
 				addLogRec(this, getPosition(iid), ret.msg);
 			}
+			else
+			{
+				this.write(iid, String(aoff), val);
+			}
 		}
 
-		this.write(iid, String(aoff), val);
 
 		abase[aoff] = aval;//todo, when offset tainted?
 		sbase[aoff] = sval;

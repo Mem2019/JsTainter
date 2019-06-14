@@ -43,6 +43,23 @@ Utils.prototype.isNumber = isNumber;
 Utils.prototype.isString = isString;
 Utils.prototype.getTypeName = getTypeName;
 Utils.prototype.getPropertyObj = getPropertyObj;
-
+Utils.prototype.isHex = function (c)
+{
+	return c >= '0' && c <= '9' ||
+		c >= 'a' && c <= 'f' ||
+		c >= 'A' && c <= 'Z';
+};
+Utils.prototype.allSame = function (arr)
+{
+	if (arr.length < 2)
+		return true;
+	const f = arr[0];
+	for (let i = 1; i < arr.length; i++)
+	{
+		if (arr[i] !== f)
+			return false;
+	}
+	return true;
+};
 sandbox.dtaUtils = new Utils();
 })(J$);

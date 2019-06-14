@@ -15,6 +15,8 @@
 		this.logAtCond = true;
 		this.taintPathName = false;
 		this.ifTaintUndefined = true;
+		this.logForUnprocNativeFunc = true;
+		this.logWhenUnescapeDiffer = true;
 	}
 	sandbox.dtaConfig = new DefaultConfig();
 })(J$);

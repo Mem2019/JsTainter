@@ -58,6 +58,10 @@ TaintLogic.prototype.escapeTaint = function (t ,type)
 	ret = t;
 	return ret;
 };
+TaintLogic.prototype.unescapeTaint = function (ts)
+{
+	return ts.reduce((a,b) => a || b);
+};
 TaintLogic.prototype.getFieldTaint = function (elemT, idxT)
 {//todo: maybe need to be changed for more option
 	var ret;

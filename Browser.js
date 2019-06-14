@@ -27,6 +27,7 @@ Browser.prototype.getField = function (base, offset, config)
 	const nt = sandbox.dtaTaintLogic.noTaint;
 	const fillArr = sandbox.dtaUtils.fillArray;
 	var ft = sandbox.dtaTaintLogic.taintSource;
+	debugger;
 	function getRet(val, start, ft)
 	{
 		if (typeof val == 'undefined')
@@ -54,14 +55,16 @@ Browser.prototype.getField = function (base, offset, config)
 			if (config.taintPathName)
 				return getRet(base[offset], 0, ft);
 			else
-				return {ret:val};
+				return {ret:base[offset]};
 		case "href":
+			const getStart = (idx) => idx === -1 ? base.href.length : idx;
+			const taintStart = Math.min(getStart(base.href.indexOf('?')),
+				getStart(base.href.indexOf('#')));
 			const start = config.taintPathName ?
-				base.href.indexOf(base.origin) + base.origin.length :
-				base.href.indexOf('?');
+				base.href.indexOf(base.origin) + base.origin.length : taintStart;
 			return getRet(base[offset], start, ft);
 		default:
-			return {ret:val};
+			return {ret:base[offset]};
 		}
 	}
 	else if (String(base) === '[object HTMLInputElement]'
