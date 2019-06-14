@@ -38,12 +38,7 @@ function TaintAnalysis(rule, config)
 		}
 		else if (typeof val === 'string')
 		{
-			var ret = [];//todo, optimize to logn
-			for (var i = 0; i < val.length; i++)
-			{
-				ret[i] = rule.noTaint;
-			}
-			return ret;
+			return Utils.fillArray(rule.noTaint, val.length);
 		}
 		else if (typeof val === 'number')
 		{
@@ -56,21 +51,21 @@ function TaintAnalysis(rule, config)
 		else
 		{
 			return rule.noTaint;
-		}//todo???
+		}
 	}
 
 	function myAssert(b, position)
 	{
 		if (b !== true)
 		{
-			Log.log("Assertion failure at" + position);
+			Log.log("Assertion failure at" + JSON.stringify(position));
 			assert(false);
 		}
 	}
 	function assertTaint(val, taint, position)
 	{
 		taint = actual(taint);
-		var s = shadow(val, rule.noTaint);
+		const s = shadow(val);
 		myAssert(typeof s === typeof taint, position);
 		if (Array.isArray(s))
 		{
@@ -79,11 +74,6 @@ function TaintAnalysis(rule, config)
 			{
 				myAssert(s[i] === taint[i], position);
 			}
-		}
-		else if (typeof s == 'object')
-		{
-			//todo:
-			assert(false);
 		}
 		else
 		{
@@ -347,19 +337,8 @@ function TaintAnalysis(rule, config)
 
 	function getPosition(iid)
 	{
-		var ret = sandbox.iidToLocation(
+		return sandbox.iidToLocation(
 			sandbox.getGlobalIID(iid));
-		return ret;
-		// var idx;
-		// while (true)
-		// {
-		// 	idx = ret.indexOf('/');
-		// 	if (idx < 0)
-		// 		break;
-		// 	ret = ret.substr(idx + 1);
-		// }
-		// if (ret[ret.length - 1] === ')')
-		// 	return ret.substr(0, ret.length - 1);
 	}
 
 	function taintAllH(val, outArrs)
@@ -443,7 +422,12 @@ function TaintAnalysis(rule, config)
 	function getTaintResult(result, taint)
 	{
 		if (isUntainted(taint))
-			return result;
+		{
+			if (typeof taint == 'object' && !Array.isArray(taint))
+				return new AnnotatedValue(result, {});
+			else
+				return result;
+		}
 		else
 			return new AnnotatedValue(result, taint);
 	}
@@ -760,14 +744,12 @@ function TaintAnalysis(rule, config)
 		//todo: to remove, for test only
 		if (f === 'assertTaint')
 		{
-			assertTaint(args[0], args[1],
-				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
+			assertTaint(args[0], args[1], getPosition(iid));
 			return {result : undefined};
 		}
 		else if (f === "assert")
 		{
-			myAssert(actual(args[0]),
-				(sandbox.iidToLocation(sandbox.getGlobalIID(iid))));
+			myAssert(actual(args[0]), getPosition(iid));
 			return {result : undefined};
 		}
 		else if (f === "debug")

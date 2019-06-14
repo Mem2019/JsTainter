@@ -114,7 +114,7 @@ There is also another point to note: as long as an object is created, it must be
 
 ### Basic types
 
-For any other basic types, such as `Number` and `Boolean`, have shadow value with only one `taint information variable`. This includes the case like `undefined` and `NaN`.
+For any other basic types, such as `Number` and `Boolean`, have shadow value with only one `taint information variable`. This also includes the case like `undefined` and `NaN`.
 
 ### Function
 

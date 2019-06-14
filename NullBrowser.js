@@ -1,7 +1,8 @@
 (function (sandbox) {
 	function Browser(){}
-	Browser.prototype.getField =
-		Browser.prototype.invokeFun =
-			function () {};
+	Browser.prototype.getField = function () {};
+	Browser.prototype.putField = function () {};
+	Browser.prototype.invokeFunSrc = function () {};
+	Browser.prototype.invokeFunSnk = function () {};
 	sandbox.dtaBrowser = new Browser();
 })(J$);
