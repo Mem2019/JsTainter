@@ -132,7 +132,34 @@ There are many test cases, and I will discuss them one by one.
 
 # Evaluation on Website
 
-In this section I am going to evaluate my analysis using web JavaScript program instead of `node.js` program.
+In this section I am going to evaluate my analysis using web JavaScript program instead of `node.js` program. 
+
+## DOM-Based XSS
+
+I have written a simple website with DOM-based XSS, shown below.
+
+```html
+<div id="sth"></div>
+<script type="text/javascript">
+	const url = window.location.href;
+	const idx = url.indexOf('#')
+	var hello;
+	if (idx === -1)
+	{
+		hello = "please input your name";
+	}
+	else
+	{
+		const hash = url.substr(idx + 1);
+		hello = "hello " + unescape(hash);
+	}
+	document.getElementById("sth").innerHTML = hello;
+</script>
+```
+
+The 
+
+todo: multi, real eval
 
 # Weakness
 
@@ -177,12 +204,20 @@ If `some_func` function is instrumented by Jalangi2, the CRC-32 value will a bec
 
 ## Prototype Poisoning
 
-In current implementation, prototype poisoning is not properly handled. 
+In current implementation, prototype poisoning is not properly handled. For example, behavior of field setting can be modified to particular function by using 
+
+```javascript
+Object.defineProperty(SomeClass.prototype, "key", {set:function(){console.log("1337")}})
+```
+
+After this statement is executed, if `obj` is an instance of `SomeClass`, and `obj["key"]=1` is executed, instead of executing normal field setting, `function(){console.log("1337")}` will be executed, so `obj["key"]` will still be `undefined`. In this case, tracking the shadow value of the object in the normal way might cause inaccuracy.
+
+
 
 1. eval on self written web site
 2. eval on web CTF challenge?
 3. eval on real world website
 4. eval on usability, e.g. environment congifuation
 5. drawback: anti-instrumentation
-6.   
+6. 
 

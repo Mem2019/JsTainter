@@ -79,22 +79,17 @@
 	};
 	TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
 	{
-		var ret;
-		if (argTaintArr.reduce((a, b) => a | b))
+		const ss = argTaintArr.reduce((a, b) => a | b);
+		if (ss !== 0)
 		{
-			ret = true;
-			return ret;
+			return ss;
 		}
-		for (var i = startIdx; i <= end; i++)
+		var acc = 0;
+		for (var i = startIdx; i < end; i++)
 		{
-			if (baseTaintArr[i])
-			{
-				ret = true;
-				return ret;
-			}
+			acc |= baseTaintArr[i]
 		}
-		ret = false;
-		return ret;
+		return acc;
 	};
 	sandbox.dtaTaintLogic = new TaintUnit();
 })(J$);

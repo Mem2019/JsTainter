@@ -565,6 +565,7 @@ function TaintAnalysis(rule, config)
 			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "===":
+			debugger;
 			result = aleft === aright;
 			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
@@ -779,7 +780,7 @@ function TaintAnalysis(rule, config)
 			ret = sandbox.dtaBrowser.invokeFunSrc(f, abase, aargs);
 			if (typeof ret != 'undefined')
 			{
-				return getTaintResult(ret.ret, ret.sv);
+				return {result: getTaintResult(ret.ret, ret.sv)};
 			}
 
 			ret = sandbox.dtaBrowser.invokeFunSnk(f, abase, aargs,
@@ -969,7 +970,7 @@ function TaintAnalysis(rule, config)
 				ret = callFun(f, actual(base), aargs, isConstructor, iid);
 				var a1 = actual(args[1]);
 				var startIdx = a1 < 0 || typeof a1 == 'undefined' ? 0 : a1;
-
+				debugger;
 				sv = rule.strIdxOfTaint(baseTaintArr, argTaintArr,
 					startIdx, ret < 0 ? 0 :ret + argTaintArr.length);
 

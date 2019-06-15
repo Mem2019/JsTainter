@@ -27,7 +27,6 @@ Browser.prototype.getField = function (base, offset, config)
 	const nt = sandbox.dtaTaintLogic.noTaint;
 	const fillArr = sandbox.dtaUtils.fillArray;
 	var ft = sandbox.dtaTaintLogic.taintSource;
-	debugger;
 	function getRet(val, start, ft)
 	{
 		if (typeof val == 'undefined')
@@ -82,6 +81,7 @@ Browser.prototype.invokeFunSrc = function (f, abase, args)
 	switch (f)
 	{
 	case prompt:
+		debugger;
 		ret = f.apply(abase, args);
 		if (typeof ret == 'string')
 		{
