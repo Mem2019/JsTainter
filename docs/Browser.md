@@ -174,30 +174,8 @@ There are two types of sinks. The first one is when field of global object is se
 
 ### Global Object Field Set
 
-This include changing `window.location.href` and `document.cookie`. When they are modified to something tainted, message is recorded.
+This include changing `window.location.href` and `document.cookie`. When they are modified to something tainted, message is recorded as `sink` type record.
 
 ### Native Function Sink
 
-This includes functions like `document.write`.
-
-# Browser Extension Todos
-
-1. try to run it successfully in browser, 
-
-   ​	handle the browser case taint (source and sink), add multiple sources taint analysis
-
-   ​	visualize the taint propagation using `codemirror`, make it a usable product in current extent
-
-   ​	handle the case of read of reference where internal stuff is tainted, maybe use user config again
-
-   ​	source and sink both include native function call and set/put field
-
-2. find the case where it is commonly used but not properly handled and modify, including Jalangi2 and JsTainter
-
-   ​	e.g. `const` and `lambda` bug in Jalangi2, some more native functions that are common
-
-   ​	base64 JSON
-
-3. so run it successfully with better accuracy, finish report & evaluation
-
-4. extension: visualization, taint level, symbolic execution, `instrumentCodePre` to anti-anti-instrumentation, etc...
+This includes functions like `document.write`, the only thing to do is simply record as `sink` type record.

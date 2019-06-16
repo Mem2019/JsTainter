@@ -7,9 +7,11 @@ categories: jekyll update
 
 # Overview
 
-JavaScript is a dynamic and weakly-typed language. Due to such feature, the taint analysis implementation is much more complicated than dynamic taint analysis over binary executables. In this section I will discuss my implementation for JavaScript, which I have employed in this project. 
+JavaScript is a dynamic and weakly-typed language. Due to such feature, the taint analysis implementation is much more complicated than dynamic taint analysis over binary executables. In this section I will discuss my implementation of JavaScript dynamic taint analysis, which I have employed in this project. 
 
 ## Common Functions
+
+Before covering the implementation of dynamic taint analysis algorithm, I will discuss implementation of some basic functions that are used frequently first.
 
 ### `isTainted`
 
@@ -55,11 +57,13 @@ function isTainted(taint)
 }
 ```
 
+`rule.noTaint` is the value of shadow value that stands for untainted state. For example, this value is `false` if boolean shadow value is used, and is `0` if number shadow value is used to represent an array of boolean variables. In `isTaintedH` function, as long as one of the shadow values of the variable does not equal to `rule.noTaint`, the function will return `true`.
+
 The reason why there is a variable `outArr` is to prevent infinite recursion caused by circular reference. For object with circular reference, its shadow value is also an object with circular reference, so it is required to record references of object that does not need to be recursed again, and perform recursion call only if an object reference is not in the `outArr`.
 
 ### `getTaintResult`
 
-When a `AnnotatedValue` object is going to be returned, some optimization is required: if the shadow value is not tainted at all, `AnnotatedValue` wrapper is not needed so the value can be returned directly. Therefore, `getTaintResult` is implemented: given value and shadow value, return `AnnotatedValue` object if it is really needed (e.i. the `taint` is really tainted). However, there is one exception: as suggested in background section, a object type variable should always be wrapped by `AnnotatedValue`, so it should still be wrapped by `AnnotatedValue` even if it is untainted.
+When a `AnnotatedValue` object is going to be returned, some optimization is required: if the shadow value is not tainted at all, `AnnotatedValue` wrapper is not needed so the value can be returned directly. Therefore, `getTaintResult` is implemented: given a value and its shadow value, return `AnnotatedValue` object if it is really needed (e.i. the `taint` is really tainted). However, there is one exception: as suggested in background section, a object type variable should always be wrapped by `AnnotatedValue`, so it should still be wrapped by `AnnotatedValue` even if it is untainted.
 
 ```javascript
 function getTaintResult(result, taint)
@@ -81,11 +85,11 @@ function getTaintResult(result, taint)
 
 ### `getPosition`
 
-Function that convert `iid` to position, which is a JSON representing the position of instruction represented by given `iid`, as covered in background chapter.
+Function that converts `iid` to position, which is a JSON storing the position of instruction represented by given `iid`, as covered in background chapter.
 
 ```javascript
 function getPosition(iid)
-{
+{// sandbox is J$ here
 	return sandbox.iidToLocation(
 		sandbox.getGlobalIID(iid));
 }
@@ -106,7 +110,7 @@ arr += "C";
 If `arr` variable is in merged form, `"[object Object]C"` will be the final result of `arr`, which is not correct, because dynamic taint analysis should not change the behavior of the program being analyzed, and the final result of `arr` should be `"ABC"` instead, as shown below.
 
 ```javascript
-// new AnnotatedValue("AB", [true,false]) is essentially ["AB"]
+// AnnotatedValue("AB", [true,false]) is essentially ["AB"]
 > var arr = ["AB"] 
 undefined
 > arr += "C"
@@ -115,7 +119,7 @@ undefined
 'ABC'
 ```
 
-Therefore, to prevent such case from occurring, we need to *strip the taint information* (e.i. transform the variable to `stripped form`) to recover the original variable before putting them into JavaScript built-in operation. `JsTainter` has implemented a function called `stripTaints` to separate taint information and real value from a `merged form` variable. The return value is an object with `taints` field being `taint information` and `values` field being `real values`.
+Therefore, to prevent such case from occurring, we need to *strip the taint information* (e.i. transform the variable to `stripped form`) to recover the original variable before putting them into JavaScript built-in operation. `JsTainter` has implemented a function called `stripTaints` to separate taint information and real value from a `merged form` variable. The return value is an object with `taints` field being `taint values` and `values` field being `real values`.
 
 ```javascript
 //The way `stripTaints` function should be used
@@ -153,16 +157,16 @@ true
 {i:true, o:{x:true, a:{'0':[true]}}} // taints
 ```
 
-When we strip the taint from a variable, it separates the real values and taint information into 2 different variables, and this is done recursively: if the variable is an object and there are more objects inside that object, objects inside the object are also stripped. If the original object is an `Object` or `Array` type, the basic structures of these separated variable are remained as original variable, which is illustrated well in the examples. 
+When taint is stripped from a variable, it separates the real values and taint information into 2 different variables, and this is done recursively: if the variable is an object and there are more objects inside that object, objects inside the object are also stripped. If the original object is an `Object` or `Array` type, the basic structures of these separated variable are same as the original variable, which is illustrated well in the examples. 
 
 Here is a few points to note: 
 
-1. The original variable is an object, it is not cloned, and it will share the same reference as the `values` part. So, if the developer use the original object after `stripTaints` is called to it, the stripped object instead of the unstripped object will be obtained. 
-2. Even if original structure is an `Array`, when it is separated into the taint part, it becomes an `Object` with numeric string as the key. The reason of this design is that if we keep it as `Array`, it will be confused with taint information of `String`, which is also an `Array`. The JavaScript feature that make this design proper is that `a[123]` and `a["123"]` will always be mapped to the same value, no matter `a` is a `Object` or an `Array`, so a number string as key will not cause any problem when we use key of different type to access the object. 
+1. Since original variable is an object, it is not cloned, and it will share the same reference as the `values` part. So, if I use the original object reference after `stripTaints` is called to it, the stripped object instead of the unstripped object will be obtained. 
+2. Even if original structure is an `Array`, when it is separated, the taint part becomes an `Object` with numeric string as properties. The reason of this design is that if we keep it as `Array`, it will be confused with taint information of `String`, which is also an `Array`. The JavaScript feature that make this design proper is that `a[123]` and `a["123"]` will always be mapped to the same value, no matter `a` is a `Object` or an `Array`, so a numeric string as property will not cause any problem even if number is used to access the object field, and vice versa. 
 3. Recursion should not be applied to circular references, since that will cause infinite recursion. Instead, a stack that stores all current outer object references should be used to check the existence of circular reference, and if any, skip that variable without applying any recursion call to it.
 4. As optimization, if a specific field of object or array is not tainted, corresponding field in taint information object will be simply `undefined` instead of `false`. In the third example, `u2` and `u` fields are both untainted, and in the taint object these 2 keys are simply undefined instead of having a `u2:false,u:false`.
 
-Paired with `stripTaints` function, we also need to implement a `mergeTaints` function that transforms the `stripped form` to `merged form`. Here is the way to use this function.
+Paired with `stripTaints` function, I also need to implement a `mergeTaints` function that transforms the `stripped form` to `merged form`. Here is the way to use this function.
 
 ```javascript
 var stripped_form; // a stripped-form AnnotatedValue instance
@@ -172,7 +176,7 @@ v = mergeTaints(actual(stripped_form), shadow(stripped_form))
 Similar to `stripTaints` function, there are also some points:
 
 1. The result object being returned is not cloned from the input, but share the same reference as the first argument passed to `mergeTaints`.
-2. Since for the untainted fields, corresponding field in shadow value (e.i. taint information of the object) is undefined, it is more efficient to traverse taint information object instead of real value object, and assign a newly created `AnnotatedValue` with shadow value fetched from taint information object to the corresponding field of real value object, if that field is tainted. 
+2. Since for the untainted fields, corresponding field in shadow value is undefined, it is more efficient to traverse taint information object instead of real value object, and assign a newly created `AnnotatedValue` with shadow value fetched from taint information object to the corresponding field of real value object. 
 3. Like `stripTaints`, circular reference is also checked and being prevented from infinite recursion.
 
 ### Implementation
@@ -214,7 +218,7 @@ function stripTaints(val)
 }
 ```
 
-The implementation is very similar to depth-first-search algorithm. The `stripTaintsH` is a helper function that given a variable in `merged form` and `outArr` that is used to record references of already recursed object, and it returns `taints` and `values` which are `stripped form`. 
+The implementation is very similar to depth-first-search algorithm. The `stripTaintsH` is a helper function that given a variable in `merged form` and `outArr` that is used to record references of already recursed object, and returns `taints` and `values` which are `stripped form`.
 
 The codes for `mergeTaints` are very similar, which is also a depth-first-search algorithm.
 
@@ -253,7 +257,7 @@ function mergeTaints(val, taints)
 
 # Result of Taint Analysis
 
-Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called `results`, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 3 types of record: `read`, `write` and `log`.
+Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called `results`, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 5 types of record: `read`, `write`, `source`, `sink` and `log`.
 
 ### Tainted Variable Read and Write
 
@@ -269,7 +273,7 @@ There are several fields in a piece of `read` and `write` record:
 
 `type` is used to specify the type of the record, and should be `'read'` for `read` record and `'write'` for `write` record.
 
-`typeOf` is used to specify type of the tainted value. For `read` record, this is the type of the tainted variable being read; and for `write` record, this is the type of tainted value used to assign the variable. The reason why such information might useful is that such approach to record taint information flow sometimes causes inaccurate result. For example:
+`typeOf` is used to specify type of the tainted value. For `read` record, this is the type of the tainted variable being read; and for `write` record, this is the type of tainted value used to assign the variable. The reason why such information might useful is that current approach to record taint information flow sometimes causes inaccurate result. For example:
 
 ```javascript
 var arr; 
@@ -279,7 +283,7 @@ arr.push(1);
 
 When `arr.push(1)` is executed, `arr` object will actually be read and thus `analysis.read` callback will be called. Since `arr` is tainted, a `read` record will be pushed into `results` array. However, this does not really make sense because here we are pushing a value into `arr` instead of propagating any taint value. The key problem is that here it is the reference of `arr` that is used instead of tainted variable inside the object. 
 
-I could simply make no recording when the value passed into `analysis.read` is an object type and record only in `analysis.getField` when tainted variable is fetched, but I think it is better to record everything but specify the type of the value in field `typeOf`, so that more information can be provided, and analyzer can also choose to filter out the records with object type if not needed.
+I could simply make no recording when the value passed into `analysis.read` is an object type and record only in `analysis.getField` when tainted variable inside an object is fetched, but I think it is better to record everything but specify the type of the value in field `typeOf`, so that more information can be provided; and analyzer can also choose to filter out the records with object type if not needed.
 
 `file` and `pos` fields are used to specify the position where this record occurs: `file` is the filename and `pos` specifies line number and column number in array form. They come from the return value of `iidToLocation` (`fname` and `pos` fields respectively), which I have covered in background chapter.
 
@@ -315,11 +319,23 @@ this.write = function (iid, name, val)
 //everything is same except `type` field
 ```
 
-In addition, `this.read` and `this.write` functions are also called in `this.getField` and `this.putField`, respectively. 
+In addition, `this.read` and `this.write` functions are also called in `this.getField` and `this.putField`, respectively, in order to record when tainted value is fetched from or set to a field of any object.
+
+### Source and Sink
+
+These 2 types of records will only appear if JsTainter is run on web application. They are similar to `read` and `write` records except they are used to specify reading from source and writing to sinks. I will cover the details of these concept in browser chapter later, so here I will only cover the structure of JSON for these 2 types.
+
+**Fields of Type Source**
+
+The JSON structure of `source` is almost identical to `read` type record, except there is one more field, `id`, which is the id of this source. This can be used to distinguish different sources when there are multiple sources in browser.
+
+**Fields of Type Sink**
+
+The JSON structure for `sink` is also similar to `write` type record, but here more information about tainted value being passed to sink is stored: instead of simply storing the type of the variable in `typeOf` field, real value and shadow value are stored in field `value` and `shadow` respectively, if they can be converted to JSON (e.i. not a circular structure).
 
 ### Special Information
 
-The special information is also one of the results of taint analysis, and its `type` field is `'log'` to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a `if` statement. These information can help user to customize the taint propagation rule and make the analysis more accurate. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later when relevant concept is covered. 
+The special information is also one of the results of taint analysis, and its `type` field is `'log'` to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a `if` statement. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later when relevant concept is covered.
 
 **Fields**
 
@@ -327,20 +343,9 @@ The special information is also one of the results of taint analysis, and its `t
 
 `msg` is the message used to inform analyzer, which is different for different special information.
 
-**Implementation**
-
-Implementation is easy: just push the relevant information into the `results` array. 
-
-```javascript
-const addLogRec = function(analysis, pos, msg)
-{
-	analysis.results = analysis.results.push(
-		{type: 'log', file: pos.fname, 
-         pos: pos.pos, msg: msg});
-};
-```
-
 # Taint Propagation
+
+In this section the taint propagation rule will be covered. Although the final product that works in browser has employed multiple source boolean array as `information taint variable`, I will still use boolean as `information taint variable` to demonstrate taint propagation rules. The primary reason is that I want to focus on taint propagation in this section, so other factors should be kept simple in order to illustrate the primary idea. Also, the implementation of multiple source boolean array as `taint information variable` is very similar to the boolean one, so there is no such big difference.  
 
 ## Binary Operators
 
@@ -348,7 +353,7 @@ In this subsection I will discuss taint propagation rule design for binary opera
 
 ### Add
 
-In JavaScript, there are only 2 behaviors for `+` operator: **numeric plus** and **string concatenation**. However, according to different operand types, the behavior of `+` varies. Of course, when 2 operands are both `Number` the behavior is numeric plus, and when 2 operands are both `String` the behavior is string concatenation. However, since JavaScript is a weakly-typed language, we also need to also consider the case other than these two, such as when 2 operands are both `Object`. To make things clear, I have written a script that shows the behavior of `+` for different types of operands:
+In JavaScript, there are only 2 behaviors for `+` operator: **numeric plus** and **string concatenation**. However, according to different operand types, the behavior of `+` varies. Of course, when 2 operands are both `Number`, the behavior is numeric plus, and when 2 operands are both `String`, the behavior is string concatenation. However, since JavaScript is a weakly-typed language, I also need to also consider the case other than these two, such as when 2 operands are both `Object`. To make things clear, I have written a script that shows the behavior of `+` for different types of operands:
 
 ```javascript
 function Test()
@@ -388,16 +393,16 @@ for (var t1 in typeVals)
 
 //todo: add a picture
 
-Opening the output as `.csv` file, we can clearly see that if both operands are among `number`, `undefined`, `null` and `boolean`, the result would be `number` type, so we can regard them as numeric add; for other cases, since the result is `string` type, so we can regard them as string concatenation. Even though we can handle all these edge cases, such edge cases rarely occur, so `JsTainter` would also record the messages into `logRec` to inform user when type of operand is any edge case.
+Opening the output as `.csv` file, it can be clearly seen that if both operands are `number`, `undefined`, `null` or `boolean`, the result would be `number` type, so they can be regarded as numeric add; for other cases, since the result is `string` type, so we can regard them as string concatenation. Even though these edge cases can be handled, message will still be recorded into `results` as `log` record if any operand is weird.
 
-For **Numeric Plus**, the rule is simple: the result is tainted if one of the operands are tainted. However, in some cases false positives may arise when both operands are tainted.
+For **Numeric Plus**, the rule is simple: the result is tainted if one of the operands are tainted, which is implemented in `rule.arithmetic` function. However, in some cases false positives may arise when both operands are tainted.
 
 ```javascript
 var tainted_int; //number-type tainted variable
 var zero = tainted_int + (-tainted_int);
 ```
 
-Cases like this is unavoidable with pure taint analysis (e.i. without symbolic execution), but fortunately such case rarely occurs. My approach to handle such situation is to record into `logRec` if both operands are tainted in `+` operation and user chooses to record this in configuration.
+Cases like this is unavoidable with pure taint analysis (e.i. without symbolic execution), but fortunately such case rarely occurs. My approach to handle such situation is to record into `results` as `log` record if both operands are tainted in `+` operation and user chooses if this is recorded in configuration.
 
 **String Concatenation** will happen not only when 2 operands are `string` type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called `getTaintArray`, which takes a value with any type as input and returns the corresponding taint array if that value is casted to `String`. There are several cases to consider:
 
@@ -411,24 +416,24 @@ In current implementation, the method is easy: if the shadow value is `true`, wh
 
 ```javascript
 //variable `input` is tainted and can be controlled by attacker
-var num = parseInt(input); 
+var num = Number(input); 
 document.write("Age: " + num);
 ```
 
-The `num` must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into `document.write` is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as `taint level` that has been discussed above. //When it is sanitized, the taint state will be somewhat different from the taint state before sanitizing.
+The `num` must be a `number` type, and attacker can control it by controlling variable `input`. When `num` is converted to `string`, every character will be tainted according to the rule described above, then it is passed into `document.write`. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into `document.write` is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable `num` is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from `'0'` to `'9'`, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as `taint level` that has been discussed before.
 
 **Array**
 
-Before looking at how `getTaintArray` for `Array` type can be implemented, we may need to look at the behavior when `Array` is converted to `String`: when array is casted to string, every element is converted to string, and joined using `','`, for example
+Before looking at how `getTaintArray` for `Array` type can be implemented, the behavior when `Array` is converted to `String` should be investigated first: when array is casted to string, every element is converted to string, and joined using `','`, for example
 
 ```javascript
-> ''+[{a:1},1,"test", true, [1,4]]
+> String([{a:1},1,"test", true, [1,4]])
 '[object Object],1,test,true,1,4'
 ```
 
-`{a:1}`, `1`, `"test"`, `true` and `[1,4]` are converted to string, then joined with `','` as separator. Note that the conversion of `[1,4]` to string is done recursively using the same way as the conversion of outter array.
+`{a:1}`, `1`, `"test"`, `true` and `[1,4]` are converted to string, then joined with `','` as separator. Note that the conversion of `[1,4]` to string is done recursively using the same way as the conversion of outer array.
 
-However, there are serveral special cases to note. *Firstly*, array can also has `string` type as the key just like map type.
+However, there are several special cases to note. *Firstly*, array can also has `string` variable as the property just like object.
 
 ```javascript
 > var a = []
@@ -508,7 +513,7 @@ If the index is never assigned or has value `undefined`, `null` or circular refe
 // first circular is `a`, second circular is `a[0]`
 ```
 
-*Thirdly*, we need to note `Array.prototype`. Assigning value to prototype is also a way to set the index of array, but this is for all `Array` instances.
+*Thirdly*, `Array.prototype` should be noted. Assigning value to prototype is also a way to set the index of array, but this would work for all `Array` instances.
 
 ```javascript
 > var a = []
@@ -529,17 +534,17 @@ undefined
 '1,,2' // however, prototype will contribute if length > index of prototype
 ```
 
-Luckily, value in `prototype` will also contribute when an array is converted to string, but only if within the range of `a.length`. Therefore, this does not affect our implementation so much. 
+Luckily, value in `prototype` will still contribute when an array is converted to string, but only if the index is smaller than `a.length`. Therefore, this does not affect our implementation so much.
 
 Considering these factors, we can implement the function that obtain the taint array when an JavaScript `Array` is converted to string. We iterate over array using for loop bounded by `length`, convert elements to taint array by using recursion call if necessary, and `concat` them together; the `','` in between is always untainted.
 
 ### Binary Arithmetic Operator
 
-Binary arithmetic operators are operators like `-`, `*`, `/` and `%`. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But types other than `Number`, things become hard to analyze. Therefore, to inform user, `JsTainter` would record the message into `logRec` when the type of operand is something other than number. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
+Binary arithmetic operators are operators like `-`, `*`, `/` and `%`. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But for types other than `Number`, things become hard to analyze. Therefore, to inform user, `JsTainter` would record the message into `results` as `log` type record when the type of operand is something other than number. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
 
 //todo: table
 
-It is obvious that as long as one of the operands is `Object`, the result is always `NaN`. Since in our design, `Object` instance is never tainted (note: but value inside them could be tainted), the result should also always be untainted as long as one of the operands is `Object`. 
+Without considering the case that `valueOf` has been overwritten, it is obvious that as long as one of the operands is `Object`, the result is always `NaN`, no matter how values inside the object changes. Therefore, as long as one of operands is object, the result should be untainted.
 
 Another possible situation is when the operand is string. When `string` is used as operand of arithmetic operation, it will be converted to number first before doing arithmetic operation except `+`.
 
@@ -552,7 +557,7 @@ Another possible situation is when the operand is string. When `string` is used 
 '310' // only `+` will perfrom string concat
 ```
 
-The result should not be tainted if the string is always converted to `NaN` no matter how tainted characters changed. For example, `AnnotatedValue("a123", [false,true,true,true]) - 0` should be untainted, because no matter how last 3 characters are changed, the result will always be `NaN` due to the existence of `'a'` at index 0; and `AnnotatedValue("1ea", [false,false,true]) - 0` should be tainted, because if we change last `'a'` to a number such as `'1'`, the result will not be `NaN` but something we can control.
+The result should not be tainted if the string is always converted to `NaN` no matter how tainted characters changed. For example, `AnnotatedValue("a123", [false,true,true,true]) - 0` should be untainted, because no matter how last 3 characters are changed, the result will always be `NaN` due to the existence of `'a'` at index 0; and `AnnotatedValue("1ea", [false,false,true]) - 0` should be tainted, because if last `'a'` is changed to a number such as `'1'`, the left hand side operand can be interpreted as a floating point number in scientific form and the result will not be `NaN` but something user can control.
 
 My approach to detect if the numeric result is actually controllable is to replace all tainted characters by number characters such as `'0'`, then try to convert the string to number. If it is still `NaN`, the result should not be tainted; if it becomes a number, the result should be tainted. However, even with such careful design, false positive could still come up. For example:
 
@@ -567,11 +572,11 @@ var r = String(b) - i;
 // but it will be marked as tainted
 ```
 
-Case like this is unavoidable, unfortunately. Therefore, the design choice is record the information into `logRec`, as I suggested above.
+Case like this is unavoidable, unfortunately. Therefore, the design choice is record the information into `results` as `log` type record when the operand type is not number, as I suggested above.
 
 ### Shift operator
 
-Shift operators are `<<`, `>>` and `>>>`. The taint propagation rule for shift operator can also be similar to arithmetic ones: result is tainted if one of the operands are tainted. However, special cases are a bit different: 
+Shift operators are `<<`, `>>` and `>>>`. The taint propagation rule for shift operator can also be similar to arithmetic ones: result is tainted if one of the operands are tainted (`rule.arithmetic` is used). However, special cases are a bit different: 
 
 1. The result is not `NaN` if there is any `NaN` among operands. Instead, the value that would be evaluated to `NaN` will be regarded as `0`. 
 2. If the left hand side is always evaluated to 0 (e.g. including `NaN` case), the result should be untainted since result is always `0` no matter how operand at right hand side changes.
@@ -598,13 +603,13 @@ Here is the table that shows all possible combinations of different types.
 
 There are two types of boolean operators: comparison such as `==`, `<` and `>`; logic such as `&&` and `||`. 
 
-For comparison, the taint propagation rule is still same: taint the result if one of the operands is tainted. However, for expression like `tainted == tainted`, where `tainted` is a tainted integer, the result is always true regardless how variable `tainted` changes, but it will still be marked as tainted according the current rule design. Fortunately, situation like this rarely occurs in real program.  Nonetheless, user can still choose to record message into `logRec` when both of operands of comparison are tainted.
+For comparison, the taint propagation rule is still same: taint the result if one of the operands is tainted. However, for expression like `tainted == tainted`, where `tainted` is a tainted integer, the result is always true no matter how variable `tainted` changes, but it will still be marked as tainted according the current rule design. Fortunately, situation like this rarely occurs in real program.  Nonetheless, analyzer can still choose to record message into `result` as `log` record when both of operands of comparison are tainted.
 
-For logic, Jalangi2 will simply treat it as conditional expression: therefore, these operators are not treated as binary operators but as conditional jumps. They would not cause `binaryPre` and `binary` handlers to be called, but would cause `conditional` handler to be called. For example, `a && b` will be translated to `a ? b : a`, therefore not a binary operator at all.
+For logic, Jalangi2 will simply treat it as conditional expression: therefore, these operators are not treated as binary operators but as conditional. They would not cause `analysis.binaryPre` and `analysis.binary` handlers to be called, but would cause `analysis.conditional` handler to be called. For example, `a && b` will be translated to `a ? b : a`, therefore it is not a binary operator at all.
 
 ### Bit-wise Operator
 
-As I suggested in last section, if bit-wise taint tracing is used, taint tracing will much more accurate here. However, since this is not necessary, we do not employ such design. Instead, we treat it in the same way as comparison operators like `==`. However, user can still choose to record message into `logRec` when tainted variable is used as operand of bit-wise operator. Except for `&` operation, where if one of operands would always be evaluated to 0, the result will also always be 0, so we mark the result as untainted no matter another operand is tainted or not.  
+As I suggested in last section, if bit-wise taint tracing is used, taint tracing will much more accurate here. However, since this is not necessary, such design is not employed. Instead, we treat it in the same way as comparison operators like `==`. However, user can still choose to record message into `results` as `log` type record when tainted variable is used as operand of bit-wise operator.  
 
 
 
@@ -612,7 +617,7 @@ As I suggested in last section, if bit-wise taint tracing is used, taint tracing
 
 ### Overview
 
-`getField` is a JavaScript operation that obtains array element, object field, and character in string. Let's look at the behavior of **object** first.
+Field getting is a JavaScript operation that obtains array element, object field, and character in string. Let's look at the behavior of **object** first.
 
 ```javascript
 > a = {}
@@ -668,7 +673,7 @@ The behavior of **array** is almost identical to object, except number keys are 
 > a[new String('0')]
 0 //new String('0') behave same as '0'
 > a['0x0']
-undefined
+undefined // numeric hex string will not be converted to number
 > a[[[[0]]]]
 0
 > a[[[['0']]]]
@@ -679,7 +684,7 @@ undefined
 [ 0, , , 3, qwer: 's', '[object Object]': 'obj' ]
 ```
 
-Unlike some other languages, in JavaScript, you don't get array out of bound when assigning the array with out-of-bound index; instead, the array is extended automatically. Also, we can also have string as the key in array, and things that is neither `String` nor `Number` will be converted to string automatically. However, `Number` type has privilege: as long as a string is a numeric integer string, it will be regarded as integer instead of string. In other word, there is no numeric string key in `Array`, because they will all be regarded as numeric index.
+Unlike some other languages, in JavaScript, there is no array-out-of-bound error when assigning the array with out-of-bound index; instead, the array is extended automatically. Also, we can also have string as the key in array, and things that is neither `String` nor `Number` will be converted to string automatically. However, `Number` type has privilege: as long as a string is a numeric integer string, it will be regarded as integer instead of string. In other word, there is no numeric string key in `Array`, because they will all be regarded as numeric index.
 
 **String** is similar to array in how it handles the numeric string, but it does not have string as the key, and it remain unchanged when `putField` is applied.
 
@@ -702,7 +707,7 @@ Unlike some other languages, in JavaScript, you don't get array out of bound whe
 undefined
 ```
 
-For **other types**, they all return `undefined` and  remain unchanged when `getField` and `putField` respectively. However, there are some built-in fields like `__proto__`, which is also the case for 3 types covered above.
+For **other types**, they all return `undefined` and  remain unchanged when `getField` and `putField` respectively. However, there are some built-in fields like `__proto__`, which also exist in 3 types covered above.
 
 ```javascript
 > x = 0x100
@@ -717,11 +722,11 @@ undefined
 
 ### Taint Analysis Rule
 
-For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of `String` type, but the implementation is a bit different due to different structures of shadow value that is used to record taint state. For example, an tainted array `[1,2]` would have structure `AnnotatedValue([1,2], {'0':true, '1':true})`, while an tainted string `"12"` would have structure `AnnotatedValue("12", [true,true])`. If we fetch index 0 (e.i. `a[0]`), the array one should give `AnnotatedValue(1,true)` which can be obtained through directly accessing both shadow value and real value, while the string one should give `AnnotatedValue("1", [true])`, which is almost same except that `true` is putted into an array because the result of accessing a string index is still a string, although with length 1 only.
+For `getField`, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of `String` type, but the implementation is a bit different due to different structures of shadow value that is used to record taint state. For example, an tainted array `[1,2]` would have structure `AnnotatedValue([1,2], {'0':true, '1':true})`, while an tainted string `"12"` would have structure `AnnotatedValue("12", [true,true])`. If we fetch index 0 (e.i. `a[0]`), the array one should give `AnnotatedValue(1,true)` which can be obtained through directly accessing both shadow value and real value, while the string one should give `AnnotatedValue("1", [true])`, which is almost same except that `true` is putted into an array because the result of accessing a string index is still a string, although with length 1.
 
 For `putField`, the current design is to directly assign the real value and shadow value to the corresponding key at both field of `AnnotatedValue`. For example, there is an empty object `obj = AnnotatedValue({}, {})`, and after operation `obj.a = x`, where `x` is a tainted variable `AnnotatedValue(1, true)`, the result of `obj` should be `AnnotatedValue({a:1}, {a:true})`. 
 
-However, such rules may give false negatives. For example, when `base64` is implemented, a index that might be tainted is used to access a constant `base64` array. The result should be tainted since there is information propagation, but if we ignore the taint state of index the result will be untainted since the array itself is not tainted, which is false negatives. To mitigate such error, `JsTainter` will record such information and let user know when a tainted key is used to access an `Object`, and enable user to custom taint propagation rule, which will be covered later. //todo 
+However, such rules may give false negatives. For example, when `base64` is implemented in JavaScript, a index that might be tainted is used to access a constant `base64` array. The result should be tainted since information propagation exists, but if the taint state of index is ignored, the result will be untainted since the constant array itself is not tainted, which means false negatives. To mitigate such error, message will be recorded into `results` as `log` record if index is tainted, and user can also modify the configuration so that result of field fetching is tainted if either corresponding element or index is tainted.
 
 ## Native Function Call
 
@@ -729,7 +734,7 @@ However, such rules may give false negatives. For example, when `base64` is impl
 
 The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, `alert` is a built-in function when JavaScript is running in the browser, and `Number` is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
 
-Therefore, we need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression.
+Therefore, I need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in `Function.prototype.toString` function, and then check the result string. If the string is in the form like `"function funcName() { [native code] }"`, it is obvious that the function is a native function. We can check this by regular expression.
 
 ```javascript
 /function [a-zA-Z_][a-zA-Z0-9_]*\(\)[ \t\n]*\{[ \t\n]*\[native code\][ \t\n]*\}/
@@ -737,9 +742,9 @@ Therefore, we need to check if a particular function is a native function or use
 
 ### Native Function Call Handler
 
-In `Jalangi2` framework, we can set `invokeFunPre` and `invokeFun` fields of `analysis class` as function handlers, and they will be called before and after any function call is made in the program being analyzed, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are wrapped by `AnnotatedValue`. Thus, instead, the function is called in `invokeFun` handler by `JsTainter`.
+In `Jalangi2` framework, I can set `invokeFunPre` and `invokeFun` fields of `analysis class` as function handlers, and they will be called before and after any function call is made in the program being analyzed, respectively. In `invokeFunPre`, nothing is implemented, but set the `skip` field of return value as `true`. By setting this field, `Jalangi2` will not perform the function call anymore. This is the desired behavior because assigning the work to `Jalangi2` will give the wrong result since the arguments are wrapped by `AnnotatedValue`. Thus, instead, the function is called in `invokeFun` handler by `JsTainter`.
 
-In `invokeFun` handler, we firstly check if `f` (the variable being called) equals to specific strings, if so, corresponding assertion function is called. This piece of codes is used for testing purpose, which will be covered when evaluation strategy is covered, but this code will be removed in the final product. Then we try to check if the function is native function. If it falls into the category of native function, a big `switch` statement will be used to check which native function `f` is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function. The pseudo code is shown below.
+In `invokeFun` handler, we firstly check if `f` (the variable being called) equals to specific strings, if so, corresponding assertion function is called. This piece of codes is used for testing purpose, which will be discussed when evaluation strategy is covered, but this code will be removed in the final product. Then I try to check if the function is native function. If it falls into the category of native function, a big `switch` statement will be used to check which native function `f` is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function. The pseudo code is shown below.
 
 ```javascript
 if (isNative(f))
@@ -773,15 +778,17 @@ sandbox.callFunExport = callFun;
 const callFun = sandbox.callFunExport;
 ```
 
+Then, this `callFun` function can be used to execute the function call.
+
 ### Native Function Rules
 
-In this subsubsectinon I will cover the detail of handler for each different native function.
+In this subsection I will cover the detail of handler for each different native function.
 
 **String.prototype.substr**
 
 The `substr` function, as its name suggests, takes the sub-string of given string. The first argument is the index and the second argument is length. However, there are some special cases. 
 
-*Firstly*, the input string does not have to be string type: if a variable other than string type is passed as the `this` argument, it will be converted into string first before applying `substr` operation. We can use `getTaintArray` that we implemented before to get the taint array when the variable is converted into `String`, and this problem can be solved.
+*Firstly*, the input string does not have to be string type: if a variable other than string type is passed as the `this` argument, it will be converted into string first before applying `substr` operation, as shown below. I can use `getTaintArray` that we implemented before to get the taint array if the variable is converted into `String`, and this problem can be solved.
 
 ```javascript
 > String.prototype.substr.apply(123456789, [2,3])
@@ -831,15 +838,13 @@ However, the disadvantage of this approach is that the maximum length of string 
 
 **Number**
 
-This function convert variable to `Number`, we can just use `rule.compressTaint` to obtain the result taint if the variable will not always evaluated to `NaN`. The logic is almost same in arithmetic taint propagation handler.
+This function convert variable to `Number`, we can just use `rule.compressTaint` to obtain the result taint if the variable will not always be evaluated to `NaN`. The logic is almost same in arithmetic taint propagation handler.
 
 **String.prototype.charAt**
 
-This function obtains the character at given index, which should return the same taint information as that of character at that index. For example, `charAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue("B", [false])`.
+This function obtains the character at given index, which should return the same taint information as that of character at that index. For example, `charAt(1)` of `AnnotatedValue("ABCD", [true,false,true,true])` should be `AnnotatedValue("B", [false])`. 
 
-However, there are some special cases. The `this` argument does not have to be string type, so `getTaintArray` need to be used to get the taint array if the value is cast to string. 
-
-There are also cases where the index is tainted, but the characters in string are not tainted. In this case we need to give user option to choose if the result should be tainted. //todo
+There are also cases where the index is tainted, but the characters in string are not tainted. In this case message is added into `results` as `log` record.
 
 **String.prototype.charCodeAt**
 
@@ -862,11 +867,11 @@ This function convert the integer to string of length 1 whose unicode value is s
 '\u0000'
 ```
 
-Therefore, we need to call `compressTaint` to the shadow value of given input. Also, if the argument always evaluates to `NaN` no matter what tainted parts are, the return value, which is `'\u0000'`, should not be tainted. For example `String.fromCharCode(AnnotatedValue('0x41\u0000', [true,true,true,true,false]))` will stil return `AnnotatedValue('\u0000', [false])`.
+Therefore, we need to call `compressTaint` to the shadow value of given input. Also, if the argument always evaluates to `NaN` no matter what tainted parts are, the return value, which is `'\u0000'`, should not be tainted. For example `String.fromCharCode(AnnotatedValue('0x41\u0000', [true,true,true,true,false]))` should return `AnnotatedValue('\u0000', [false])`.
 
 **String.prototype.concat**
 
-This is almost same as the `+` operation as string concatention. However, the difference is that this function can concat serveral strings together.
+This is almost same as the `+` operation as string concatenation. However, the difference is that this function can concatenate several strings together.
 
 ```javascript
 > "abc".concat("def", "ghi", "jk")
@@ -875,7 +880,7 @@ This is almost same as the `+` operation as string concatention. However, the di
 'abc[object Object]1232,3'
 ```
 
-Thus, we need to concat all taint array together, using `Array.prototype.concat`.
+Thus, we need to concatenate all taint array together, using `Array.prototype.concat`.
 
 **escape**
 
@@ -888,17 +893,19 @@ This is the function that converts the string into URL encoding if necessary.
 
 There are 3 cases: if the character does not have to be converted into URL encoding, it will be left unchanged; if the character need to be encoded but is smaller than `0x100`, it will be converted to `%XX`; if the character need to be encoded but is larger than `0x100`, it will be converted to `%uXXXX`. For the first case, the taint information is left unchanged; for the second case, the taint information is copied 3 times; and for the third case, the taint information is copied 6 times.
 
+**unescape**
+
+Function `unescape` converts the escaped URL-encoded string back into original string. There are also 3 cases, same as function `escape`. For unchanged characters, the taint information is also unchanged; for other 2 cases, the taint information is reduced with `or` operator. Nonetheless, it is vary rare for taint information within the encoded version of a character to be different (e.g. `AnnotatedValue("%41", [true,false,false])`), so a message will be recorded into `results` as `log` record in such case.
+
+To check if a sequence of characters can be decoded, we must ensure all characters after it to be the correct format. For example, `"%qq"` should not be regarded as encoded character.
+
+**String.prototype.indexOf**
+
+Function `indexOf` is used to fetch the first appearance of a substring. Firstly, if the substring is tainted, the result is tainted; otherwise, the taint result is dependent on characters before the returned index. 
+
 ### User Defined Function Call
 
-For user defined function call, what we need to do is simply 
-
-### Constructor
-
-todo, there are some wired behavior
-
-### SandBox
-
-What if the codes being analyzed is malicious and want to gain privilege? e.g. define another `AnnotatedValue` class, or defined a function with same name as function in `Analyzer`, but this seems to be already solved by `Jalangi`
+For user defined function call, I simply called the function using `callFun`.
 
 ## Other Instrumentation
 
@@ -945,13 +952,3 @@ this.forinObject = function (iid, val)
 	return {result: actual(val)};
 };
 ```
-
-
-
-1. report for ALL DTA algorithm
-
-   log and config and if necessary, record, which shold ALL be inside `TaintLogic`
-
-2. add other operation handling if they are commonly used in real world
-
-   e.g. getfield, other native functions, e.g. String/Numer/Array/JSON methods
