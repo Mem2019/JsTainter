@@ -27,32 +27,35 @@ Browser.prototype.getField = function (base, offset, config)
 	const nt = sandbox.dtaTaintLogic.noTaint;
 	const fillArr = sandbox.dtaUtils.fillArray;
 	var ft = sandbox.dtaTaintLogic.taintSource;
-	function getRet(val, start, ft)
+	function getRet(val, start, ft, id)
 	{
 		if (typeof val == 'undefined')
 		{
-			return {ret: val, sv: config.ifTaintUndefined ? ft : nt};
+			return {ret: val,
+				id: config.ifTaintUndefined ? id : undefined,
+				sv: config.ifTaintUndefined ? ft : nt};
 		}
 		else
 		{
 			const end = val.length;
 			return {
-				ret: val, sv:
-					fillArr(nt, start).concat(fillArr(ft, end - start))
+				ret: val, id: id,
+				sv: fillArr(nt, start).concat(fillArr(ft, end - start))
 			};
 		}
 	}
 	if (base === window.location)
 	{
-		ft = ft(0);
+		const id = 0;
+		ft = ft(id);
 		switch (offset)
 		{
 		case "hash":
 		case "search":
-			return getRet(base[offset], 0, ft);
+			return getRet(base[offset], 0, ft, id);
 		case "pathname":
 			if (config.taintPathName)
-				return getRet(base[offset], 0, ft);
+				return getRet(base[offset], 0, ft, id);
 			else
 				return {ret:base[offset]};
 		case "href":
@@ -61,16 +64,17 @@ Browser.prototype.getField = function (base, offset, config)
 				getStart(base.href.indexOf('#')));
 			const start = config.taintPathName ?
 				base.href.indexOf(base.origin) + base.origin.length : taintStart;
-			return getRet(base[offset], start, ft);
+			return getRet(base[offset], start, ft, id);
 		default:
-			return {ret:base[offset]};
+			return;
 		}
 	}
 	else if (String(base) === '[object HTMLInputElement]'
 		&& offset === 'value' && base.type === 'text')
 	{
-		ft = ft(this.getInputId(base));
-		return getRet(base.value, 0, ft);
+		const id = this.getInputId(base);
+		ft = ft(id);
+		return getRet(base.value, 0, ft, id);
 	}
 };
 Browser.prototype.invokeFunSrc = function (f, abase, args)
@@ -81,12 +85,12 @@ Browser.prototype.invokeFunSrc = function (f, abase, args)
 	switch (f)
 	{
 	case prompt:
-		debugger;
 		ret = f.apply(abase, args);
 		if (typeof ret == 'string')
 		{
-			sv = fillArray(ft(this.getNextId()), ret.length);
-			return {ret: ret, sv: sv};
+			const id = this.getNextId();
+			sv = fillArray(ft(id), ret.length);
+			return {ret: ret, sv: sv, id:id};
 		}
 		else
 		{
@@ -104,14 +108,13 @@ Browser.prototype.putField = function (base, offset, val, sval, config)
 		var ret;
 		try
 		{
-			ret = "Tainted value " + JSON.stringify(val) +
-				' ' + JSON.stringify(sval) +
-				" has been written to " + c + ' ' + offset;
+			JSON.stringify(val);
+			JSON.stringify(sval);
+			ret = {value: val, shadow: sval, name: c+'.'+offset};
 		}
 		catch (e)
 		{
-			ret = "Tainted value has been written to " +
-				c + ' ' + offset;
+			ret = {value: "[cyclic object]", shadow: "[cyclic object]", name: c+'.'+offset};
 		}
 		return ret;
 	}
@@ -129,18 +132,18 @@ Browser.prototype.putField = function (base, offset, val, sval, config)
 		case 'port':
 		case 'protocol':
 		case 'search':
-			return {msg: genMsg("window.location.")};
+			return genMsg("window.location");
 		}
 		return;
 	case document:
 		if (offset === 'cookie')
-			return {msg: genMsg("cookie.")};
+			return genMsg("cookie");
 		return;
 	}
 	const m = String(base).match(/\[object HTML[a-zA-Z0-9]+Element]/);
 	if (m !== null && m[0] === String(base))
 	{
-		return {msg: genMsg(String(base))};
+		return genMsg(String(base));
 	}
 };
 
@@ -151,13 +154,13 @@ Browser.prototype.invokeFunSnk = function (f, abase, aargs, sbase ,sargs, isTain
 		var ret;
 		try
 		{
-			ret = "Tainted value " + JSON.stringify(aargs) + ' '
-				+ JSON.stringify(sargs)+
-				" has been passed to " + f.name;
+			JSON.stringify(aargs);
+			JSON.stringify(sargs);
+			ret = {value: aargs, shadow: sargs, name: f.name};
 		}
 		catch (e)
 		{
-			ret = "Tainted value has been written to " + f.name;
+			ret = {value: "[cyclic object]", shadow: "[cyclic object]", name: f.name};
 		}
 		return ret;
 	}
@@ -166,8 +169,9 @@ Browser.prototype.invokeFunSnk = function (f, abase, aargs, sbase ,sargs, isTain
 	case document.write:
 	case document.writeln:
 	case XMLHttpRequest.prototype.send:
+	case XMLHttpRequest.prototype.open:
 		if (sargs.map(isTainted).reduce((a,b) => a || b))
-			return {msg: genMsg()};
+			return genMsg();
 	}
 };
 sandbox.dtaBrowser = new Browser();

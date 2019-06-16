@@ -21,6 +21,20 @@ function TaintAnalysis(rule, config)
 		analysis.results.push(
 			{type: 'log', file: pos.fname, pos: pos.pos, msg: msg});
 	};
+	const addSinkRec = function (analysis, pos, msg)
+	{
+		analysis.results.push({type: 'sink', file: pos.fname, pos: pos.pos,
+			value: msg.value, shadow: msg.shadow, name: msg.name});
+	};
+	const addSourceRec = function (analysis, pos, aval, name, id)
+	{
+		analysis.results.push(
+			{
+				type: 'source', typeOf: typeof aval,
+				file: pos.fname, pos: pos.pos,
+				name: name, id:id
+			});
+	};
 	function AnnotatedValue(val, shadow)
 	{
 		this.val = val;
@@ -565,7 +579,6 @@ function TaintAnalysis(rule, config)
 			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
 		case "===":
-			debugger;
 			result = aleft === aright;
 			ret = {result: cmpTaintProp.call(this, left, right, result, op, pos)};
 			break;
@@ -780,14 +793,18 @@ function TaintAnalysis(rule, config)
 			ret = sandbox.dtaBrowser.invokeFunSrc(f, abase, aargs);
 			if (typeof ret != 'undefined')
 			{
-				return {result: getTaintResult(ret.ret, ret.sv)};
+				addSourceRec(this, position, ret.ret, f.name, ret.id);
+				ret = getTaintResult(ret.ret, ret.sv);
+				return {result: ret};
 			}
 
 			ret = sandbox.dtaBrowser.invokeFunSnk(f, abase, aargs,
 				shadow(base), shadowArgs(args), isTainted);
+			var handled = false;
 			if (typeof ret != 'undefined')
 			{
-				addLogRec(this, position, ret.msg);
+				addSinkRec(this, position, ret);
+				handled = true;
 			}
 
 			switch (f)
@@ -959,7 +976,8 @@ function TaintAnalysis(rule, config)
 					throw TypeError("Number.prototype.toString is not generic");
 				aargs = actualArgs(args);
 
-				rule.toStringTaint(base, shadow(base), (a) => callFun(f, a, aargs, isConstructor, iid));
+				sv = rule.toStringTaint(abase, shadow(base), (a) => callFun(f, a, aargs, isConstructor, iid));
+				ret = callFun(f, abase, aargs, isConstructor, iid);
 			}
 			break;
 			case String.prototype.indexOf:
@@ -970,7 +988,6 @@ function TaintAnalysis(rule, config)
 				ret = callFun(f, actual(base), aargs, isConstructor, iid);
 				var a1 = actual(args[1]);
 				var startIdx = a1 < 0 || typeof a1 == 'undefined' ? 0 : a1;
-				debugger;
 				sv = rule.strIdxOfTaint(baseTaintArr, argTaintArr,
 					startIdx, ret < 0 ? 0 :ret + argTaintArr.length);
 
@@ -983,7 +1000,7 @@ function TaintAnalysis(rule, config)
 			break;
 			default:
 			{
-				if (config.logForUnprocNativeFunc)
+				if (config.logForUnprocNativeFunc && !handled)
 				{
 					addLogRec(this, position, "Unhandled native function " + f.name);
 				}
@@ -1024,7 +1041,9 @@ function TaintAnalysis(rule, config)
 		ret = sandbox.dtaBrowser.getField(abase, aoff, config);
 		if (typeof ret != 'undefined')
 		{
-			return {result:getTaintResult(ret.ret, ret.sv)};
+			addSourceRec(this, getPosition(iid), ret.ret, String(aoff), ret.id);
+			ret = getTaintResult(ret.ret, ret.sv);
+			return {result: ret};
 		}
 		else
 		{
@@ -1047,9 +1066,9 @@ function TaintAnalysis(rule, config)
 			ret = abase[aoff];
 			sv = f(sv, soff);
 			ret = getTaintResult(ret, sv);
+			this.read(iid, String(aoff), ret);
+			return {result:ret};
 		}
-		this.read(iid, String(aoff), ret);
-		return {result:ret};
 	};
 	this.putFieldPre = function (iid, base, offset, val)
 	{
@@ -1068,7 +1087,7 @@ function TaintAnalysis(rule, config)
 				abase, aoff, aval, sval, config);
 			if (typeof ret !== 'undefined')
 			{
-				addLogRec(this, getPosition(iid), ret.msg);
+				addSinkRec(this, getPosition(iid), ret);
 			}
 			else
 			{

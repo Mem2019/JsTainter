@@ -37,7 +37,7 @@
 		else if (Array.isArray(shadow))
 		{
 			if (shadow.length === 0)
-				ret = false;
+				ret = 0;
 			else
 				ret = shadow.reduce((a, b) => a | b);
 		}
@@ -73,9 +73,7 @@
 	};
 	TaintUnit.prototype.getStringCharTaint = function (baseT, offsetT)
 	{
-		var ret;
-		ret = [baseT];
-		return ret;
+		return [baseT];
 	};
 	TaintUnit.prototype.strIdxOfTaint = function (baseTaintArr, argTaintArr, startIdx, end)
 	{
@@ -93,4 +91,3 @@
 	};
 	sandbox.dtaTaintLogic = new TaintUnit();
 })(J$);
-//todo, make it an array of boolean
