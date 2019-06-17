@@ -1,0 +1,948 @@
+\section{Overview}
+
+JavaScript is a dynamic and weakly-typed language. Due to such feature, the taint analysis implementation is much more complicated than dynamic taint analysis over binary executables. In this section I will discuss my implementation of JavaScript dynamic taint analysis, which I have employed in this project. 
+
+\subsection{Common Functions}
+
+Before covering the implementation of dynamic taint analysis algorithm, I will discuss implementation of some basic functions that are used frequently first.
+
+\subsubsection{\texttt{isTainted}}
+
+This is the function that returns \texttt{true} if the shadow value is tainted, and returns \texttt{false} if not. The shadow value can be \texttt{taint information variable} for basic types, and array of \texttt{taint information variable} for string types, and object for object types. These 3 cases are also illustrated in codes.
+
+\begin{minted}{javascript}
+function isTaintedH(taint, outArr)
+{
+    if (Array.isArray(taint))
+    {// original value is string type
+        for (var i = 0; i < taint.length; i++)
+        {
+            if (taint[i] !== rule.noTaint)
+                return true;
+        }
+        // return false only if no character is tainted
+        return false;
+    }
+    else if (typeof taint === 'object')
+    {// original value is object
+        outArr.push(taint);
+        for (var k in taint)
+        {
+            if (outArr.indexOf(taint[k]) === -1)
+            {// prevent infinite recursion
+                //recursion
+                if (isTaintedH(taint[k], outArr))
+                    return true;
+            }
+        }
+        outArr.pop();
+        // return false iff nothing inside is tainted
+        return false;
+    }
+    else
+    {// original value is basic type
+        return taint !== rule.noTaint && typeof taint != 'undefined';
+    }
+}
+function isTainted(taint)
+{
+    return isTaintedH(taint, []);
+}
+\end{minted}
+
+\texttt{rule.noTaint} is the value of shadow value that stands for untainted state. For example, this value is \texttt{false} if boolean shadow value is used, and is \texttt{0} if number shadow value is used to represent an array of boolean variables. In \texttt{isTaintedH} function, as long as one of the shadow values of the variable does not equal to \texttt{rule.noTaint}, the function will return \texttt{true}.
+
+The reason why there is a variable \texttt{outArr} is to prevent infinite recursion caused by circular reference. For object with circular reference, its shadow value is also an object with circular reference, so it is required to record references of object that does not need to be recursed again, and perform recursion call only if an object reference is not in the \texttt{outArr}.
+
+\subsubsection{\texttt{getTaintResult}}
+
+When a \texttt{AnnotatedValue} object is going to be returned, some optimization is required: if the shadow value is not tainted at all, \texttt{AnnotatedValue} wrapper is not needed so the value can be returned directly. Therefore, \texttt{getTaintResult} is implemented: given a value and its shadow value, return \texttt{AnnotatedValue} object if it is really needed (e.i. the \texttt{taint} is really tainted). However, there is one exception: as suggested in background section, a object type variable should always be wrapped by \texttt{AnnotatedValue}, so it should still be wrapped by \texttt{AnnotatedValue} even if it is untainted.
+
+\begin{minted}{javascript}
+function getTaintResult(result, taint)
+{
+    if (isUntainted(taint))
+    {
+        if (typeof taint == 'object' && !Array.isArray(taint))
+            return new AnnotatedValue(result, {}); 
+            // object should be wrapped always, even is untainted
+        else
+            return result;
+            // return the value only
+    }
+    else
+        return new AnnotatedValue(result, taint);
+        // wrap them with AnnotatedValue and return it
+}
+\end{minted}
+
+\subsubsection{\texttt{getPosition}}
+
+Function that converts \texttt{iid} to position, which is a JSON storing the position of instruction represented by given \texttt{iid}, as covered in background chapter.
+
+\begin{minted}{javascript}
+function getPosition(iid)
+{// sandbox is J$ here
+    return sandbox.iidToLocation(
+        sandbox.getGlobalIID(iid));
+}
+\end{minted}
+
+\section{Taint Stripping and Merging}
+
+As I mentioned when discussing shadow value of object and array, there are 2 possible design choices: for example, we can have either \texttt{[AnnotatedValue(1,true), AnnotatedValue(2,true)]} or \texttt{AnnotatedValue([1,2], {'0':true, '1':true})}, where the second one is more favorable. However, even if second form is a more favorable design, sometimes the first form is easier to process. Therefore, we need some functions that enable us to switch between these 2 forms. To make it simple, I will call the first form as \texttt{merged form} and the second form as \texttt{stripped form} in the following section.
+
+\texttt{Taint stripping} is the operation that \textit{recursively} transforms the \texttt{merged from} to \texttt{stripped form}. I will explain what "recursively" means here later. If the merged form design choice is used for object and array variables (which is my original design), and when variable is used in JavaScript operations, the taint information must be stripped first to ensure the correctness of the result of JavaScript operations. These operations include JavaScript native function call and basic operator operation. The correctness of the operation can be affected by \texttt{merged form} as shown below.
+
+\begin{minted}{javascript}
+var arr;
+//arr is [AnnotatedValue("AB", [true,false])]
+arr += "C";
+\end{minted}
+
+If \texttt{arr} variable is in merged form, \texttt{"[object Object]C"} will be the final result of \texttt{arr}, which is not correct, because dynamic taint analysis should not change the behavior of the program being analyzed, and the final result of \texttt{arr} should be \texttt{"ABC"} instead, as shown below.
+
+\begin{minted}{javascript}
+// AnnotatedValue("AB", [true,false]) is essentially ["AB"]
+> var arr = ["AB"] 
+undefined
+> arr += "C"
+'ABC'
+> arr
+'ABC'
+\end{minted}
+
+Therefore, to prevent such case from occurring, we need to \textit{strip the taint information} (e.i. transform the variable to \texttt{stripped form}) to recover the original variable before putting them into JavaScript built-in operation. \texttt{JsTainter} has implemented a function called \texttt{stripTaints} to separate taint information and real value from a \texttt{merged form} variable. The return value is an object with \texttt{taints} field being \texttt{taint values} and \texttt{values} field being \texttt{real values}.
+
+\begin{minted}{javascript}
+//The way \texttt{stripTaints} function should be used
+var v;
+var sv = stripTaints(v);
+sv.taints; //access taint part
+sv.values; //access value part
+var stripped_form = new AnnotatedValue(sv.values, sv.taints)
+//convert it into \texttt{stripped form}
+\end{minted}
+
+Here are some examples illustrating the effect of calling \texttt{stripTaints}. 
+
+\begin{minted}{javascript}
+//Example 1:// todo: make it a table
+//before stripping
+AnnotatedValue(1, true)
+//after stripping
+1
+true
+
+//before stripping
+[AnnotatedValue("AB", [true, false])]
+//after stripping
+["AB"] // values
+{'0':[true,false]} // taints
+
+//before stripping
+{i:new AnnotatedValue(1, true), u:1337,
+    u2:AnnotatedValue(1337, false),
+    o:{x:new AnnotatedValue(2, true), 
+        a:[new AnnotatedValue("A", [true])]}}
+//after stripping
+{i:1, u:1337, u2:1337, o:{x:2,a:["A"]}} // values
+{i:true, o:{x:true, a:{'0':[true]}}} // taints
+\end{minted}
+
+When taint is stripped from a variable, it separates the real values and taint information into 2 different variables, and this is done recursively: if the variable is an object and there are more objects inside that object, objects inside the object are also stripped. If the original object is an \texttt{Object} or \texttt{Array} type, the basic structures of these separated variable are same as the original variable, which is illustrated well in the examples. 
+
+Here is a few points to note: 
+
+1. Since original variable is an object, it is not cloned, and it will share the same reference as the \texttt{values} part. So, if I use the original object reference after \texttt{stripTaints} is called to it, the stripped object instead of the unstripped object will be obtained. 
+2. Even if original structure is an \texttt{Array}, when it is separated, the taint part becomes an \texttt{Object} with numeric string as properties. The reason of this design is that if we keep it as \texttt{Array}, it will be confused with taint information of \texttt{String}, which is also an \texttt{Array}. The JavaScript feature that make this design proper is that \texttt{a[123]} and \texttt{a["123"]} will always be mapped to the same value, no matter \texttt{a} is a \texttt{Object} or an \texttt{Array}, so a numeric string as property will not cause any problem even if number is used to access the object field, and vice versa. 
+3. Recursion should not be applied to circular references, since that will cause infinite recursion. Instead, a stack that stores all current outer object references should be used to check the existence of circular reference, and if any, skip that variable without applying any recursion call to it.
+4. As optimization, if a specific field of object or array is not tainted, corresponding field in taint information object will be simply \texttt{undefined} instead of \texttt{false}. In the third example, \texttt{u2} and \texttt{u} fields are both untainted, and in the taint object these 2 keys are simply undefined instead of having a \texttt{u2:false,u:false}.
+
+Paired with \texttt{stripTaints} function, I also need to implement a \texttt{mergeTaints} function that transforms the \texttt{stripped form} to \texttt{merged form}. Here is the way to use this function.
+
+\begin{minted}{javascript}
+var stripped_form; // a stripped-form AnnotatedValue instance
+v = mergeTaints(actual(stripped_form), shadow(stripped_form))
+\end{minted}
+
+Similar to \texttt{stripTaints} function, there are also some points:
+
+1. The result object being returned is not cloned from the input, but share the same reference as the first argument passed to \texttt{mergeTaints}.
+2. Since for the untainted fields, corresponding field in shadow value is undefined, it is more efficient to traverse taint information object instead of real value object, and assign a newly created \texttt{AnnotatedValue} with shadow value fetched from taint information object to the corresponding field of real value object. 
+3. Like \texttt{stripTaints}, circular reference is also checked and being prevented from infinite recursion.
+
+\subsubsection{Implementation}
+
+This is the codes for function \texttt{stripTaints}
+
+\begin{minted}{javascript}
+function stripTaintsH(val, outArrs)
+{
+    var aval = actual(val);
+    if (typeof aval == 'object' && aval === val)
+    {// only perform stripping when \texttt{val} is a merged-form object
+        outArrs.push(aval);
+        // push the object being processed to prevent infinite recursion
+        var taints = {};
+        for (var k in aval)
+        {
+            if (outArrs.indexOf(val[k]) === -1)
+            { // iterate unprocessed elements
+                var stripped = stripTaintsH(val[k], outArrs); // recursion
+                if (isTainted(stripped.taints))
+                    taints[k] = stripped.taints;
+                    // create taint only if the variable is tainted
+                val[k] = stripped.values;
+                // update value
+            }
+        }
+        outArrs.pop();
+        return {taints:taints, values:val};
+    }
+    else
+    {// variable is basic type
+        return {taints:shadow(val), values:actual(val)};
+    }
+}
+function stripTaints(val)
+{
+    return stripTaintsH(val, []);
+}
+\end{minted}
+
+The implementation is very similar to depth-first-search algorithm. The \texttt{stripTaintsH} is a helper function that given a variable in \texttt{merged form} and \texttt{outArr} that is used to record references of already recursed object, and returns \texttt{taints} and \texttt{values} which are \texttt{stripped form}.
+
+The codes for \texttt{mergeTaints} are very similar, which is also a depth-first-search algorithm.
+
+\begin{minted}{javascript}
+function mergeTaintsH(val, taints, outTaints)
+{
+    outTaints.push(taints);
+    for (var k in taints)
+    {
+        if (typeof taints[k] == 'object' && !Array.isArray(taints[k]))
+        {//recurse for unseen non-basic type taint
+            if (outTaints.indexOf(taints[k]) === -1)
+                val[k] = mergeTaintsH(val[k], taints[k], outTaints);
+        }
+        else if (isTainted(taints[k]))
+        {//merge directly for basic types
+            val[k] = new AnnotatedValue(val[k], taints[k]);
+        }
+    }
+    outTaints.pop();
+    return val;
+}
+
+function mergeTaints(val, taints)
+{
+    if (typeof taints == 'object' && !Array.isArray(taints))
+    {// if taints are object other than Array, \texttt{val} should be object
+        return mergeTaintsH(val, taints, []);
+    }
+    else
+    {// for basic types including string, return directly
+        return getTaintResult(val, taints);
+    }
+}
+\end{minted}
+
+\section{Result of Taint Analysis}
+
+Since dynamic taint analysis is a kind of analysis that gives the result of information flow of a particular program when it is run with some given input, we need some ways to represent such results. The results of the dynamic taint analysis is stored in an array called \texttt{results}, each element is a piece of record, and the records are pushed into the array in execution order (e.i. if record A appears before record B when the program is executed, then index of record A in that array will be smaller than index of record B). One piece of record is stored in JSON form, and there are 5 types of record: \texttt{read}, \texttt{write}, \texttt{source}, \texttt{sink} and \texttt{log}.
+
+\subsubsection{Tainted Variable Read and Write}
+
+Although \texttt{read} and \texttt{write} are 2 different types of records, their implementation are very similar, so I will discuss them together. As the name suggests, a \texttt{read} record stands for the information that a tainted variable is read (e.i. used), while a \texttt{write} records stands for the information that a variable is written by a tainted value (e.i. assigned). The idea is clear: I want to represent the taint flow as the program executes, so when a tainted variable is used or when a tainted value is assigned to a variable, there might be some taint flow, which I need to record and to be shown to analyzer. 
+
+What I mean by tainted here is not only a tainted basic-type value like a tainted integer, but also a tainted object or string. As long as one of the character in string is tainted, or as long as one of the value inside the object is tainted, the object or string will be regarded as tainted.
+
+The \texttt{read} record will be pushed into \texttt{results} when \texttt{analysis.read} and \texttt{analysis.getField} callbacks are called, and similarly the \texttt{write} record will be pushed into \texttt{results} when \texttt{analysis.read} and \texttt{analysis.getField} callbacks are called, when relevant value used in the operation is tainted. 
+
+\textbf{Fields}
+
+There are several fields in a piece of \texttt{read} and \texttt{write} record:
+
+\texttt{type} is used to specify the type of the record, and should be \texttt{'read'} for \texttt{read} record and \texttt{'write'} for \texttt{write} record.
+
+\texttt{typeOf} is used to specify type of the tainted value. For \texttt{read} record, this is the type of the tainted variable being read; and for \texttt{write} record, this is the type of tainted value used to assign the variable. The reason why such information might useful is that current approach to record taint information flow sometimes causes inaccurate result. For example:
+
+\begin{minted}{javascript}
+var arr; 
+//\texttt{arr} is an Array with one of the element being tainted
+arr.push(1);
+\end{minted}
+
+When \texttt{arr.push(1)} is executed, \texttt{arr} object will actually be read and thus \texttt{analysis.read} callback will be called. Since \texttt{arr} is tainted, a \texttt{read} record will be pushed into \texttt{results} array. However, this does not really make sense because here we are pushing a value into \texttt{arr} instead of propagating any taint value. The key problem is that here it is the reference of \texttt{arr} that is used instead of tainted variable inside the object. 
+
+I could simply make no recording when the value passed into \texttt{analysis.read} is an object type and record only in \texttt{analysis.getField} when tainted variable inside an object is fetched, but I think it is better to record everything but specify the type of the value in field \texttt{typeOf}, so that more information can be provided; and analyzer can also choose to filter out the records with object type if not needed.
+
+\texttt{file} and \texttt{pos} fields are used to specify the position where this record occurs: \texttt{file} is the filename and \texttt{pos} specifies line number and column number in array form. They come from the return value of \texttt{iidToLocation} (\texttt{fname} and \texttt{pos} fields respectively), which I have covered in background chapter.
+
+\texttt{name} is the variable name or field name. For example, statement \texttt{a.c = b} (\texttt{b} is tainted) will produce \texttt{"b"} as \texttt{name} field of the \texttt{read} record, and \texttt{"c"} as \texttt{name} field of the \texttt{write} record.
+
+\textbf{Implementation}
+
+Since \texttt{write} record and \texttt{read} record are very similar, and the only difference is the \texttt{type} field, they are implemented in same function, \texttt{rwRec}, except type is accepted as argument, which are passed differently in \texttt{analysis.read} and \texttt{analysis.write}.
+
+\begin{minted}{javascript}
+function rwRec(analysis, iid, name, val, rw)
+{
+    const pos = getPosition(iid);
+    if (val instanceof AnnotatedValue || isTainted(shadow(val)))
+    {// if \texttt{val} is tainted
+        const typeOf = typeof actual(val);
+        analysis.results = analysis.results.push(
+            {// push relavant information into \texttt{results} array
+                type: rw, typeOf: typeOf,
+                file: pos.fname, pos: pos.pos,
+                name: name
+            });
+    }
+}
+this.read = function (iid, name, val)
+{
+    rwRec(this, iid, name, val, 'read');
+};
+this.write = function (iid, name, val)
+{
+    rwRec(this, iid, name, val, 'write');
+};
+//everything is same except \texttt{type} field
+\end{minted}
+
+In addition, \texttt{this.read} and \texttt{this.write} functions are also called in \texttt{this.getField} and \texttt{this.putField}, respectively, in order to record when tainted value is fetched from or set to a field of any object.
+
+\subsubsection{Source and Sink}
+
+These 2 types of records will only appear if JsTainter is run on web application. They are similar to \texttt{read} and \texttt{write} records except they are used to specify reading from source and writing to sinks. I will cover the details of these concept in browser chapter later, so here I will only cover the structure of JSON for these 2 types.
+
+\textbf{Fields of Type Source}
+
+The JSON structure of \texttt{source} is almost identical to \texttt{read} type record, except there is one more field, \texttt{id}, which is the id of this source. This can be used to distinguish different sources when there are multiple sources in browser.
+
+\textbf{Fields of Type Sink}
+
+The JSON structure for \texttt{sink} is also similar to \texttt{write} type record, but here more information about tainted value being passed to sink is stored: instead of simply storing the type of the variable in \texttt{typeOf} field, real value and shadow value are stored in field \texttt{value} and \texttt{shadow} respectively, if they can be converted to JSON (e.i. not a circular structure).
+
+\subsubsection{Special Information}
+
+The special information is also one of the results of taint analysis, and its \texttt{type} field is \texttt{'log'} to be specific. It is used to record special information that user might want to note about. For example, information could be recorded when tainted variable is used in a \texttt{if} statement. User can also choose whether to record a particular type of special information by setting the configuration. The different types of special information will be covered later when relevant concept is covered.
+
+\textbf{Fields}
+
+\texttt{file} and \texttt{pos} fields are exactly same as ones in \texttt{read} or \texttt{write} record.
+
+\texttt{msg} is the message used to inform analyzer, which is different for different special information.
+
+\section{Taint Propagation}
+
+In this section the taint propagation rule will be covered. Although the final product that works in browser has employed multiple source boolean array as \texttt{information taint variable}, I will still use boolean as \texttt{information taint variable} to demonstrate taint propagation rules. The primary reason is that I want to focus on taint propagation in this section, so other factors should be kept simple in order to illustrate the primary idea. Also, the implementation of multiple source boolean array as \texttt{taint information variable} is very similar to the boolean one, so there is no such big difference.  
+
+\subsection{Binary Operators}
+
+In this subsection I will discuss taint propagation rule design for binary operator in this project. Because there is no operator overloads in JavaScript, the behaviors of binary operators are always certain.
+
+\subsubsection{Add}
+
+In JavaScript, there are only 2 behaviors for \texttt{+} operator: \textbf{numeric plus} and \textbf{string concatenation}. However, according to different operand types, the behavior of \texttt{+} varies. Of course, when 2 operands are both \texttt{Number}, the behavior is numeric plus, and when 2 operands are both \texttt{String}, the behavior is string concatenation. However, since JavaScript is a weakly-typed language, I also need to also consider the case other than these two, such as when 2 operands are both \texttt{Object}. To make things clear, I have written a script that shows the behavior of \texttt{+} for different types of operands:
+
+\begin{minted}{javascript}
+function Test()
+{
+    this.t = 1;
+}
+var arr = [];
+arr[0] = 1;
+arr[2] = 4;
+arr["a"] = 'b';
+arr["c"] = new Test();
+var typeVals = {str : "abc", numstr : "123", num : 123,
+    undefined : undefined, null:null, bool : true, object : {a:1, b:1},
+    objectTest: new Test(), arr : arr};
+
+const print = (s)=>process.stdout.write(''+s);
+const println = (s)=>print(s+'\n');
+
+print('\"\",')
+for (var t2 in typeVals)
+{
+    print('\"' + t2 + '\",');
+}
+println('');
+for (var t1 in typeVals)
+{
+    print(t1 + ',');
+    for (var t2 in typeVals)
+    {
+        var res = typeVals[t2] - typeVals[t1]
+        var type = typeof res;
+        print('\"' + type + ': ' + res + '\",');
+    }
+    println('');
+}
+\end{minted}
+
+//todo: add a picture
+
+Opening the output as \texttt{.csv} file, it can be clearly seen that if both operands are \texttt{number}, \texttt{undefined}, \texttt{null} or \texttt{boolean}, the result would be \texttt{number} type, so they can be regarded as numeric add; for other cases, since the result is \texttt{string} type, so we can regard them as string concatenation. Even though these edge cases can be handled, message will still be recorded into \texttt{results} as \texttt{log} record if any operand is weird.
+
+For \textbf{Numeric Plus}, the rule is simple: the result is tainted if one of the operands are tainted, which is implemented in \texttt{rule.arithmetic} function. However, in some cases false positives may arise when both operands are tainted.
+
+\begin{minted}{javascript}
+var tainted_int; //number-type tainted variable
+var zero = tainted_int + (-tainted_int);
+\end{minted}
+
+Cases like this is unavoidable with pure taint analysis (e.i. without symbolic execution), but fortunately such case rarely occurs. My approach to handle such situation is to record into \texttt{results} as \texttt{log} record if both operands are tainted in \texttt{+} operation and user chooses if this is recorded in configuration.
+
+\textbf{String Concatenation} will happen not only when 2 operands are \texttt{string} type, but will also happen when they are array or object, which makes things complex. The approach to solve this is to implement a function called \texttt{getTaintArray}, which takes a value with any type as input and returns the corresponding taint array if that value is casted to \texttt{String}. There are several cases to consider:
+
+\textbf{String}
+
+If the value is string, just return its shadow value directly, since nothing will change if it is used as string.
+
+\textbf{Number, Boolean and Undefined}
+
+In current implementation, the method is easy: if the shadow value is \texttt{true}, which means the variable is tainted, then every character is tainted when it is casted to \texttt{String}; if the shadow value is \texttt{false}, which means the variable is untainted, then every character is untainted when it is casted to \texttt{String}. However, drawback exists in such design: the string is tainted even if the string cannot be completely controlled by the user who provides the input. In other word, we lose the information that the string can only be partly controlled by user. If we are using this taint analysis to perform automatic vulnerability detection, this will cause false positive if the goal is to detect vulnerability such as \texttt{XSS}. For example, consider the following code:
+
+\begin{minted}{javascript}
+//variable \texttt{input} is tainted and can be controlled by attacker
+var num = Number(input); 
+document.write("Age: " + num);
+\end{minted}
+
+The \texttt{num} must be a \texttt{number} type, and attacker can control it by controlling variable \texttt{input}. When \texttt{num} is converted to \texttt{string}, every character will be tainted according to the rule described above, then it is passed into \texttt{document.write}. If the rule that is used to detect vulnerability is to report the vulnerability as long as data passed into \texttt{document.write} is tainted, the false positive will be reported in this case. The reason is that even if the string converted from variable \texttt{num} is tainted, attacker cannot have full control of the string: attacker can only control the character ranging from \texttt{'0'} to \texttt{'9'}, so DOM-based XSS is not here. If we are using taint analysis to detect vulnerabilities, we may want to remove the taint as long as it is sanitized, or to use different taint value strategy such as \texttt{taint level} that has been discussed before.
+
+\textbf{Array}
+
+Before looking at how \texttt{getTaintArray} for \texttt{Array} type can be implemented, the behavior when \texttt{Array} is converted to \texttt{String} should be investigated first: when array is casted to string, every element is converted to string, and joined using \texttt{','}, for example
+
+\begin{minted}{javascript}
+> String([{a:1},1,"test", true, [1,4]])
+'[object Object],1,test,true,1,4'
+\end{minted}
+
+\texttt{{a:1}}, \texttt{1}, \texttt{"test"}, \texttt{true} and \texttt{[1,4]} are converted to string, then joined with \texttt{','} as separator. Note that the conversion of \texttt{[1,4]} to string is done recursively using the same way as the conversion of outer array.
+
+However, there are several special cases to note. \textit{Firstly}, array can also has \texttt{string} variable as the property just like object.
+
+\begin{minted}{javascript}
+> var a = []
+undefined
+> a[0] = 1
+1 // assign to a integer index
+> a[1] = 2
+2 // assign to another integer index
+> a[-1] = -2
+-2 // assign to a negative integer
+> a["key"] = "test"
+'test' // assign to a string key 
+> a[a] = 5
+5 // assign to a array key
+> a[{}] = 'obj'
+'obj' // assign to a object key
+> a[10000000000000000000000000000000000000000000000000000000]='big'
+'big' // assign to a large integer
+> a[0.1] = 0.1
+0.1 // assign to a floating point number
+> a
+[ 1,
+  2,
+  '-1': -2,
+  key: 'test',
+  '1,2': 5,
+  '[object Object]': 'obj',
+  '1e+55': 'big',
+  '0.1': 0.1 ]
+/\textit{except 0 and 1, everything else is converted to string before being used as key}/
+> ''+a
+'1,2'
+/\textit{however, when casted to String, value inside string key will not be used}/
+\end{minted}
+
+However, as shown clearly above, these value bounded with \texttt{string} key will not contribute when the array is converted to \texttt{string}, and any type other than positive small integer will be converted to \texttt{string} as key.
+
+\textit{Secondly}, \texttt{null}, \texttt{undefined} and circular reference will not be converted to string, but will be an empty string.
+
+\begin{minted}{javascript}
+> var a = []
+undefined
+> a
+[]
+> a[0] = "first"
+'first'
+> a[2] = "2"
+'2'
+> a[3] = undefined
+undefined // assign \texttt{undefined} to index 3, also index 1 is not assigned so it's also undefined
+> a[4] = "4th"
+'4th'
+> a[5] = null
+null // assign \texttt{null} to index 5
+> a[6] = 'six'
+'six'
+> a[7] = a //assign circular reference at index 7
+[ 'first', , '2', undefined, '4th', null, 'six', [Circular] ]
+> ''+a
+'first,,2,,4th,,six,'
+/\textit{cast to string, obviously \texttt{null}, \texttt{undefined} and circular reference is empty string}/
+\end{minted}
+
+If the index is never assigned or has value \texttt{undefined}, \texttt{null} or circular reference, it will simply be converted to empty string. The way to define circular structure is when an element is the reference to any outter arrays, for example:
+
+\begin{minted}{javascript}
+> a = []
+[]
+> a[0] = []
+[]
+> a[0][0] = a // assign circular reference, although not direct circular reference
+[ [ [Circular] ] ]
+> a[0][1] = a[0] // assign direct circular reference
+[ [ [Circular] ], [Circular] ]
+> a
+[ [ [Circular], [Circular] ] ]
+// first circular is \texttt{a}, second circular is \texttt{a[0]}
+\end{minted}
+
+\textit{Thirdly}, \texttt{Array.prototype} should be noted. Assigning value to prototype is also a way to set the index of array, but this would work for all \texttt{Array} instances.
+
+\begin{minted}{javascript}
+> var a = []
+undefined
+> Array.prototype
+[]
+> Array.prototype[0] = 1
+1
+> a.length
+0 // array prototype will not make the array longer
+> ''+a
+'' // array prototype will not contribute when casted to string if the length <= index of prototype
+> a[2] = 2
+2
+> a.length
+3
+> ''+a
+'1,,2' // however, prototype will contribute if length > index of prototype
+\end{minted}
+
+Luckily, value in \texttt{prototype} will still contribute when an array is converted to string, but only if the index is smaller than \texttt{a.length}. Therefore, this does not affect our implementation so much.
+
+Considering these factors, we can implement the function that obtain the taint array when an JavaScript \texttt{Array} is converted to string. We iterate over array using for loop bounded by \texttt{length}, convert elements to taint array by using recursion call if necessary, and \texttt{concat} them together; the \texttt{','} in between is always untainted.
+
+\subsubsection{Binary Arithmetic Operator}
+
+Binary arithmetic operators are operators like \texttt{-}, \texttt{*}, \texttt{/} and \texttt{%}. If both operands are numeric, dynamic taint analysis rule can work easily: the result is tainted as long as one of the operands is tainted. But for types other than \texttt{Number}, things become hard to analyze. Therefore, to inform user, \texttt{JsTainter} would record the message into \texttt{results} as \texttt{log} type record when the type of operand is something other than number. Here are the tables that show all possible combinations of different types of operands for different arithmetic operators.
+
+//todo: table
+
+Without considering the case that \texttt{valueOf} has been overwritten, it is obvious that as long as one of the operands is \texttt{Object}, the result is always \texttt{NaN}, no matter how values inside the object changes. Therefore, as long as one of operands is object, the result should be untainted.
+
+Another possible situation is when the operand is string. When \texttt{string} is used as operand of arithmetic operation, it will be converted to number first before doing arithmetic operation except \texttt{+}.
+
+\begin{minted}{javascript}
+> "3"/10
+0.3
+> "3" - "10"
+-7
+> "3" + "10"
+'310' // only \texttt{+} will perfrom string concat
+\end{minted}
+
+The result should not be tainted if the string is always converted to \texttt{NaN} no matter how tainted characters changed. For example, \texttt{AnnotatedValue("a123", [false,true,true,true]) - 0} should be untainted, because no matter how last 3 characters are changed, the result will always be \texttt{NaN} due to the existence of \texttt{'a'} at index 0; and \texttt{AnnotatedValue("1ea", [false,false,true]) - 0} should be tainted, because if last \texttt{'a'} is changed to a number such as \texttt{'1'}, the left hand side operand can be interpreted as a floating point number in scientific form and the result will not be \texttt{NaN} but something user can control.
+
+My approach to detect if the numeric result is actually controllable is to replace all tainted characters by number characters such as \texttt{'0'}, then try to convert the string to number. If it is still \texttt{NaN}, the result should not be tainted; if it becomes a number, the result should be tainted. However, even with such careful design, false positive could still come up. For example:
+
+\begin{minted}{javascript}
+var b; 
+// \texttt{b} is a tainted variable, but is always boolean
+var i;
+// \texttt{i} is a tainted variable, but is always integer
+var r = String(b) - i;
+// characters in String(b) are all tainted
+// \texttt{r} is always NaN no matter what \texttt{b} and \texttt{i} are
+// but it will be marked as tainted
+\end{minted}
+
+Case like this is unavoidable, unfortunately. Therefore, the design choice is record the information into \texttt{results} as \texttt{log} type record when the operand type is not number, as I suggested above.
+
+\subsubsection{Shift operator}
+
+Shift operators are \texttt{<<}, \texttt{>>} and \texttt{>>>}. The taint propagation rule for shift operator can also be similar to arithmetic ones: result is tainted if one of the operands are tainted (\texttt{rule.arithmetic} is used). However, special cases are a bit different: 
+
+1. The result is not \texttt{NaN} if there is any \texttt{NaN} among operands. Instead, the value that would be evaluated to \texttt{NaN} will be regarded as \texttt{0}. 
+2. If the left hand side is always evaluated to 0 (e.g. including \texttt{NaN} case), the result should be untainted since result is always \texttt{0} no matter how operand at right hand side changes.
+
+\begin{minted}{javascript}
+> 123 << "asc"
+123
+> "asc" << 42
+0
+> 123 << {}
+123
+> 123 << [1,2]
+123
+// operand that will be casted to NaN will be regarded as 0
+> 123 << [1]
+246
+\end{minted}
+
+Here is the table that shows all possible combinations of different types.
+
+//todo add table
+
+\subsubsection{Boolean Operator}
+
+There are two types of boolean operators: comparison such as \texttt{==}, \texttt{<} and \texttt{>}; logic such as \texttt{&&} and \texttt{||}. 
+
+For comparison, the taint propagation rule is still same: taint the result if one of the operands is tainted. However, for expression like \texttt{tainted == tainted}, where \texttt{tainted} is a tainted integer, the result is always true no matter how variable \texttt{tainted} changes, but it will still be marked as tainted according the current rule design. Fortunately, situation like this rarely occurs in real program.  Nonetheless, analyzer can still choose to record message into \texttt{result} as \texttt{log} record when both of operands of comparison are tainted.
+
+For logic, Jalangi2 will simply treat it as conditional expression: therefore, these operators are not treated as binary operators but as conditional. They would not cause \texttt{analysis.binaryPre} and \texttt{analysis.binary} handlers to be called, but would cause \texttt{analysis.conditional} handler to be called. For example, \texttt{a && b} will be translated to \texttt{a ? b : a}, therefore it is not a binary operator at all.
+
+\subsubsection{Bit-wise Operator}
+
+As I suggested in last section, if bit-wise taint tracing is used, taint tracing will much more accurate here. However, since this is not necessary, such design is not employed. Instead, we treat it in the same way as comparison operators like \texttt{==}. However, user can still choose to record message into \texttt{results} as \texttt{log} type record when tainted variable is used as operand of bit-wise operator.  
+
+
+
+\subsection{Put and Get Field}
+
+\subsubsection{Overview}
+
+Field getting is a JavaScript operation that obtains array element, object field, and character in string. Let's look at the behavior of \textbf{object} first.
+
+\begin{minted}{javascript}
+> a = {}
+{}
+> a["qwer"] = 1
+1 // put field
+> a.qwer
+1 //a["qwer"] is equavalent to a.qwer
+> a
+{ qwer: 1 }
+\end{minted}
+
+As shown above, \texttt{a["xxx"]} and \texttt{a.xxx} both give same behavior. In addition, there are also some edge cases as always, for example:
+
+\begin{minted}{javascript}
+> a = {}
+{}
+> a[1] = '1'
+'1'
+> a[{}] = 'obj'
+'obj' // {} will be casted to string first before used as key
+> a['1']
+'1' //a['1'] is equavalent to a[1], for the same reason
+> a[[[1]]]
+'1' //[[1]] will be casted to string first, which is '1'
+> a['0x1']
+undefined //'0x1' cannot be casted to 1
+> a
+{ '1': '1', '[object Object]': 'obj' }
+\end{minted}
+
+When the key is something other than string, it will be converted to string first, then used as the key to obtain the value.
+
+The behavior of \textbf{array} is almost identical to object, except number keys are treated specially.
+
+\begin{minted}{javascript}
+> a = []
+[]
+> a[0] = 0
+0
+> a[3] = 3
+3
+> a.length
+4 // the length is dependent on largest index being assigned
+> a["qwer"] = 's'
+'s' // assign using string as the key
+> a[{}] = 'obj'
+'obj' //{} will also be casted to string first
+> a[[[["qwer",]],]]
+'s' //same, casted to string before used as key
+> a['0']
+0 //a['0'] is equavalent to a[0], which means numeric string will be casted to int
+> a[new String('0')]
+0 //new String('0') behave same as '0'
+> a['0x0']
+undefined // numeric hex string will not be converted to number
+> a[[[[0]]]]
+0
+> a[[[['0']]]]
+0
+> a[NaN]
+undefined
+> a
+[ 0, , , 3, qwer: 's', '[object Object]': 'obj' ]
+\end{minted}
+
+Unlike some other languages, in JavaScript, there is no array-out-of-bound error when assigning the array with out-of-bound index; instead, the array is extended automatically. Also, we can also have string as the key in array, and things that is neither \texttt{String} nor \texttt{Number} will be converted to string automatically. However, \texttt{Number} type has privilege: as long as a string is a numeric integer string, it will be regarded as integer instead of string. In other word, there is no numeric string key in \texttt{Array}, because they will all be regarded as numeric index.
+
+\textbf{String} is similar to array in how it handles the numeric string, but it does not have string as the key, and it remain unchanged when \texttt{putField} is applied.
+
+\begin{minted}{javascript}
+> a = "qwer"
+'qwer'
+> a[1]
+'w'
+> a['1']
+'w' // numeric string will be treated as integer
+> a[[[['1']]]]
+'w' // cast to string first before used as key
+> a[4] = 'k'
+'k'
+> a[0] = 'k'
+'k'
+> a
+'qwer'
+> a['qwer']
+undefined
+\end{minted}
+
+For \textbf{other types}, they all return \texttt{undefined} and  remain unchanged when \texttt{getField} and \texttt{putField} respectively. However, there are some built-in fields like \texttt{__proto__}, which also exist in 3 types covered above.
+
+\begin{minted}{javascript}
+> x = 0x100
+256
+> x["test"] = 'test'
+'test'
+> x.test
+undefined
+> x.__proto__
+[Number: 0]
+\end{minted}
+
+\subsubsection{Taint Analysis Rule}
+
+For \texttt{getField}, the current design is to return the same thing as the value corresponding to the key. Therefore, if the element being fetched is tainted, the result is tainted; otherwise, the result is not tainted. The rule is same for the case of \texttt{String} type, but the implementation is a bit different due to different structures of shadow value that is used to record taint state. For example, an tainted array \texttt{[1,2]} would have structure \texttt{AnnotatedValue([1,2], {'0':true, '1':true})}, while an tainted string \texttt{"12"} would have structure \texttt{AnnotatedValue("12", [true,true])}. If we fetch index 0 (e.i. \texttt{a[0]}), the array one should give \texttt{AnnotatedValue(1,true)} which can be obtained through directly accessing both shadow value and real value, while the string one should give \texttt{AnnotatedValue("1", [true])}, which is almost same except that \texttt{true} is putted into an array because the result of accessing a string index is still a string, although with length 1.
+
+For \texttt{putField}, the current design is to directly assign the real value and shadow value to the corresponding key at both field of \texttt{AnnotatedValue}. For example, there is an empty object \texttt{obj = AnnotatedValue({}, {})}, and after operation \texttt{obj.a = x}, where \texttt{x} is a tainted variable \texttt{AnnotatedValue(1, true)}, the result of \texttt{obj} should be \texttt{AnnotatedValue({a:1}, {a:true})}. 
+
+However, such rules may give false negatives. For example, when \texttt{base64} is implemented in JavaScript, a index that might be tainted is used to access a constant \texttt{base64} array. The result should be tainted since information propagation exists, but if the taint state of index is ignored, the result will be untainted since the constant array itself is not tainted, which means false negatives. To mitigate such error, message will be recorded into \texttt{results} as \texttt{log} record if index is tainted, and user can also modify the configuration so that result of field fetching is tainted if either corresponding element or index is tainted.
+
+\subsection{Native Function Call}
+
+\subsubsection{Native Function Recognition}
+
+The native functions are JavaScript built-in functions. These do not have to be functions defined in JavaScript standard, but can also be some environment dependent functions, such as DOM APIs. For example, \texttt{alert} is a built-in function when JavaScript is running in the browser, and \texttt{Number} is a built-in function defined in JavaScript standard that should works fine in all JavaScript implementations.
+
+Therefore, I need to check if a particular function is a native function or user-defined function. After some [investigation](https://davidwalsh.name/detect-native-function), I found that I can convert the function into string by built-in \texttt{Function.prototype.toString} function, and then check the result string. If the string is in the form like \texttt{"function funcName() { [native code] }"}, it is obvious that the function is a native function. We can check this by regular expression.
+
+\begin{minted}{javascript}
+/function [a-zA-Z_][a-zA-Z0-9_]\textit{\(\)[ \t\n]}\{[ \t\n]\textit{\[native code\][ \t\n]}\}/
+\end{minted}
+
+\subsubsection{Native Function Call Handler}
+
+In \texttt{Jalangi2} framework, I can set \texttt{invokeFunPre} and \texttt{invokeFun} fields of \texttt{analysis class} as function handlers, and they will be called before and after any function call is made in the program being analyzed, respectively. In \texttt{invokeFunPre}, nothing is implemented, but set the \texttt{skip} field of return value as \texttt{true}. By setting this field, \texttt{Jalangi2} will not perform the function call anymore. This is the desired behavior because assigning the work to \texttt{Jalangi2} will give the wrong result since the arguments are wrapped by \texttt{AnnotatedValue}. Thus, instead, the function is called in \texttt{invokeFun} handler by \texttt{JsTainter}.
+
+In \texttt{invokeFun} handler, we firstly check if \texttt{f} (the variable being called) equals to specific strings, if so, corresponding assertion function is called. This piece of codes is used for testing purpose, which will be discussed when evaluation strategy is covered, but this code will be removed in the final product. Then I try to check if the function is native function. If it falls into the category of native function, a big \texttt{switch} statement will be used to check which native function \texttt{f} is , and jump to the corresponding case handler, in which the taint propagation logic and actual function call are implemented for that particular native function. The pseudo code is shown below.
+
+\begin{minted}{javascript}
+if (isNative(f))
+{
+    switch (f)
+    {
+        case String.prototype.substr:
+        //....
+        case String.prototype.charAt:
+        //....
+        /\textit{Other native funtions}/
+    }
+}
+else
+{
+    //...
+}
+\end{minted}
+
+\subsubsection{Function Call Implementation}
+
+Sometimes, native function would be called with \texttt{new}, such as \texttt{new XMLHttpRequest}. Therefore, when \texttt{isConstructor} argument is \texttt{true}, the function need to be called as constructor. Therefore using \texttt{.apply} is not appropriate. Since in \texttt{analysis.js}, there is already a function \texttt{callFun} being defined, in which constructor is also implemented, so we can modify codes of Jalangi2 and export this function by assigning it to field of \texttt{analysis} and call it in \texttt{analysis.invokeFun}.
+
+\begin{minted}{javascript}
+//in analysis.js
+sandbox.callFunExport = callFun;
+\end{minted}
+
+\begin{minted}{javascript}
+//in invokeFun callback at DynTaintAnalysis.js
+const callFun = sandbox.callFunExport;
+\end{minted}
+
+Then, this \texttt{callFun} function can be used to execute the function call.
+
+\subsubsection{Native Function Rules}
+
+In this subsection I will cover the detail of handler for each different native function.
+
+\textbf{String.prototype.substr}
+
+The \texttt{substr} function, as its name suggests, takes the sub-string of given string. The first argument is the index and the second argument is length. However, there are some special cases. 
+
+\textit{Firstly}, the input string does not have to be string type: if a variable other than string type is passed as the \texttt{this} argument, it will be converted into string first before applying \texttt{substr} operation, as shown below. I can use \texttt{getTaintArray} that we implemented before to get the taint array if the variable is converted into \texttt{String}, and this problem can be solved.
+
+\begin{minted}{javascript}
+> String.prototype.substr.apply(123456789, [2,3])
+'345' // 123456789 will be converted to '123456789' first
+> String.prototype.substr.apply({}, [2,10])
+'bject Obje' // {} will be converted to '[object Object]' first
+> String.prototype.substr.apply([1,2,3,4,5,6,7,8], [2,3])
+'2,3' // the array will be converted to '1,2,3,4,5,6,7,8' first
+\end{minted}
+
+\textit{Secondly}, index can be negative, and when it is negative, it will start from the end (e.i. \texttt{-x} has same effect as \texttt{length-x}). Also, index and length does not have to be \texttt{Number}; if they are not \texttt{Number}, they will be converted to \texttt{Number} first. When they are evaluated to \texttt{NaN}, they will be regarded as \texttt{0}.
+
+\begin{minted}{javascript}
+> "abcdefghij".substr(-3,2)
+'hi'
+> "abcdefghij".substr("abcdefghij".length-3,2)
+'hi'
+//case of negative index
+> "abcdefghij".substr(-100, 3)
+'abc'
+//but index will be regard as 0 if index < -length
+> "abcdefghij".substr(NaN, 3)
+'abc'
+> "abcdefghij".substr({}, 3)
+'abc'
+//anything that will be converted to NaN will be regarded as 0
+> "abcdefghij".substr([[[3]]], [3])
+'def'
+> "abcdefghij".substr('3', '3')
+'def'
+//anything that will be casted to numeric string will be regarded as number
+\end{minted}
+
+When \texttt{substr} is handled, we must also slice the taint array in the same way as \texttt{substr}. For example, for a string \texttt{AnnotatedValue("AABB", [true,true,false,false])}, and \texttt{substr(1,2)} is applied, the result should be \texttt{AnnotatedValue("AB", [true,false])}. However, if we use \texttt{Array.prototype.slice} to slice the taint array of string in \texttt{substr} operation, we will have too many cases to consider. Thus, I came up with a quick and dirty way to implement it: the taint array can be converted to string first, then apply the \texttt{substr} with the same argument, and finally convert it back to taint array. I have implemented a function called \texttt{taintArrToStr}. In this function, for each character of the result string, the Unicode value is the index to the taint array, so what this function actually does is to generate a string with same length and characters with ascending values starting from \texttt{'\u0000'}. Another function that I have implemented is \texttt{strToTaintArr}. This function is called after \texttt{substr} is applied: the Unicode values are used as indexes to fetch the taint array elements, which are joined together to be the result. A piece of code may illustrate my idea better.
+
+\begin{minted}{javascript}
+> var s = taintArrToStr([true, false, true, false])
+> s
+"\u0000\u0001\u0002\u0003"
+> s = s.substr(1,1)
+"\u0001\u0002"
+> strToTaintArr(s, [true, false, true, false])
+[false, true]
+\end{minted}
+
+However, the disadvantage of this approach is that the maximum length of string cannot exceed 65536, the max value of numeric value of character, but fortunately string with such big size rarely occurs.
+
+\textbf{Number}
+
+This function convert variable to \texttt{Number}, we can just use \texttt{rule.compressTaint} to obtain the result taint if the variable will not always be evaluated to \texttt{NaN}. The logic is almost same in arithmetic taint propagation handler.
+
+\textbf{String.prototype.charAt}
+
+This function obtains the character at given index, which should return the same taint information as that of character at that index. For example, \texttt{charAt(1)} of \texttt{AnnotatedValue("ABCD", [true,false,true,true])} should be \texttt{AnnotatedValue("B", [false])}. 
+
+There are also cases where the index is tainted, but the characters in string are not tainted. In this case message is added into \texttt{results} as \texttt{log} record.
+
+\textbf{String.prototype.charCodeAt}
+
+This is similar to \texttt{chatAt}, except that the ascii value will be returned, so the taint information at that index will also be returned as shadow value. For the same example, \texttt{charCodeAt(1)} of \texttt{AnnotatedValue("ABCD", [true,false,true,true])} should be \texttt{AnnotatedValue(0x42, false)}.
+
+\textbf{String.fromCharCode}
+
+This function convert the integer to string of length 1 whose unicode value is same as the given index. For example, \texttt{String.fromCharCode(0x41)} will give \texttt{"A"}. The result taint information is same as the taint value of given argument. However, the given argument does not have to be \texttt{Number}. They can be some other types.
+
+\begin{minted}{javascript}
+> String.fromCharCode([[0x41]])
+'A'
+> String.fromCharCode({a:0x41})
+'\u0000'
+> String.fromCharCode('0x41')
+'A'
+> String.fromCharCode(null)
+'\u0000'
+> String.fromCharCode('0x41\u0000')
+'\u0000'
+\end{minted}
+
+Therefore, we need to call \texttt{compressTaint} to the shadow value of given input. Also, if the argument always evaluates to \texttt{NaN} no matter what tainted parts are, the return value, which is \texttt{'\u0000'}, should not be tainted. For example \texttt{String.fromCharCode(AnnotatedValue('0x41\u0000', [true,true,true,true,false]))} should return \texttt{AnnotatedValue('\u0000', [false])}.
+
+\textbf{String.prototype.concat}
+
+This is almost same as the \texttt{+} operation as string concatenation. However, the difference is that this function can concatenate several strings together.
+
+\begin{minted}{javascript}
+> "abc".concat("def", "ghi", "jk")
+'abcdefghijk'
+> "abc".concat({}, 123, [2,3])
+'abc[object Object]1232,3'
+\end{minted}
+
+Thus, we need to concatenate all taint array together, using \texttt{Array.prototype.concat}.
+
+\textbf{escape}
+
+This is the function that converts the string into URL encoding if necessary.
+
+\begin{minted}{javascript}
+> escape("abc\"\'<>\ucccc")
+'abc%22%27%3C%3E%uCCCC'
+\end{minted}
+
+There are 3 cases: if the character does not have to be converted into URL encoding, it will be left unchanged; if the character need to be encoded but is smaller than \texttt{0x100}, it will be converted to \texttt{%XX}; if the character need to be encoded but is larger than \texttt{0x100}, it will be converted to \texttt{%uXXXX}. For the first case, the taint information is left unchanged; for the second case, the taint information is copied 3 times; and for the third case, the taint information is copied 6 times.
+
+\textbf{unescape}
+
+Function \texttt{unescape} converts the escaped URL-encoded string back into original string. There are also 3 cases, same as function \texttt{escape}. For unchanged characters, the taint information is also unchanged; for other 2 cases, the taint information is reduced with \texttt{or} operator. Nonetheless, it is vary rare for taint information within the encoded version of a character to be different (e.g. \texttt{AnnotatedValue("%41", [true,false,false])}), so a message will be recorded into \texttt{results} as \texttt{log} record in such case.
+
+To check if a sequence of characters can be decoded, we must ensure all characters after it to be the correct format. For example, \texttt{"%qq"} should not be regarded as encoded character.
+
+\textbf{String.prototype.indexOf}
+
+Function \texttt{indexOf} is used to fetch the first appearance of a substring. Firstly, if the substring is tainted, the result is tainted; otherwise, the taint result is dependent on characters before the returned index. 
+
+\subsubsection{User Defined Function Call}
+
+For user defined function call, I simply called the function using \texttt{callFun}.
+
+\subsection{Other Instrumentation}
+
+\subsubsection{_with}
+
+\texttt{_with} is the instrumentation callback that will be executed when \texttt{with} statement is executed. Since currently, the design is to wrap the object inside an \texttt{AnnotatedValue} object, if \texttt{with} is applied directly to an \texttt{AnnotatedValue} object, instead of extending the scope chain using the fields inside the original object, scope chain will be extended using fields of \texttt{AnnotatedValue} (e.i. \texttt{val} and \texttt{shadow}), which is incorrect. For example, we have an object \texttt{AnnotatedValue({a:1,b:2}, {a:true}}, after being applied by \texttt{with}, scope being extended will be \texttt{val==={a:1,b:2}} and \texttt{shadow==={a:true}}, which not what we want because we actually want \texttt{a===AnnotatedValue(1,true)} and \texttt{b===2}. Therefore, we want to instrument the \texttt{with} statement and make it work like that.
+
+According to the Jalangi2 documentation, we can modify the object being used by \texttt{with} statement by setting the \texttt{result} field of return value. Therefore, the desired effect can be implemented by creating an new object and setting the corresponding field to intended \texttt{AnnotatedValue} object, and enable \texttt{with} statement to use it by setting the \texttt{result} field of return value object. The instrumentation callback is shown below.
+
+\begin{minted}{javascript}
+this._with = function (iid, val)
+{
+    var aval = actual(val); // get \texttt{val} field
+    var sval = shadow(val); // get \texttt{shadow} field
+    var ret = {};
+    for (var k in aval)
+    {
+        /*
+        traverse all fields,
+        create correct AnnotatedValue object with corresponding shadow value,
+        assign it to the corresponding field of the newly created object,
+        */
+        ret[k] = getTaintResult(aval[k], sval[k]);
+        /*
+        getTaintResult is a wrapper for creation of AnnotatedValue,
+        and will create AnnotatedValue object only if shadow value is tainted,
+        which is just an optimization
+        */
+    }
+    return {result:ret};
+    //return that newly created object as the result
+};
+\end{minted}
+
+\subsubsection{forinObject}
+
+Similar to \texttt{with} statement, if an object wrapped by \texttt{AnnotatedValue}, and a \texttt{for} loop is used to iterate the keys of the object (e.i. \texttt{for (var k in obj) {...}}), the iteration will be wrong. The reason is very similar: \texttt{val} and \texttt{shadow} fields of \texttt{AnnotatedValue} will be iterated instead of fields inside keys in the original object. Using the same example, \texttt{AnnotatedValue({a:1,b:2}, {a:true})}, we want the iteration to be string keys \texttt{"a"} followed by \texttt{"b"}, but in reality \texttt{"val"} and \texttt{"shadow"} string keys will be iterated. 
+
+Therefore, we need to set \texttt{forinObject} instrumentation callback function to handle it. Since this operation only cares about the properties instead of values, we only need to return \texttt{val} field of \texttt{AnnotatedValue} because it is exactly the original object but without shadow values, which must have the same properties. Thus the implementation is very simple, shown below.
+
+\begin{minted}{javascript}
+this.forinObject = function (iid, val)
+{
+    return {result: actual(val)};
+};
+\end{minted}
+
