@@ -118,10 +118,6 @@
 				}
 			}
 			window.setTimeout(oneFrame, interval);
-			for (let i = 0; i < results.length; i++)
-			{
-
-			}
 		}
 		catch (e)
 		{
@@ -138,9 +134,12 @@
 		<input type="button" value="play" onclick="playTaintFlow()" />
 		<label>
 		<textarea rows="5" cols="50" id="results"></textarea><br>
-			<input type="text" id="interval" value="500" />
+			Time between 2 frames (in ms): <br><input type="text" id="interval" value="100" />
 		</label>
-
+		<br>
+		Green: tainted value is written to a variable <br>
+		Red: a tainted variable is used <br>
+		Blue: souce and sink
 	</form>
 
 </body>
