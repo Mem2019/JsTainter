@@ -14,6 +14,7 @@ const config = sandbox.dtaConfig;
 
 function TaintAnalysis(rule, config)
 {
+	this.lastIsWrite = false;
 	this.results = [];
 	const addLogRec = function(analysis, pos, msg)
 	{
@@ -515,6 +516,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.binary = function(iid, op, left, right, result)
 	{
+		this.lastIsWrite = false;
 		var pos = getPosition(iid);
 		var ret;
 
@@ -622,6 +624,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.unary = function (iid, op, left, result)
 	{
+		this.lastIsWrite = false;
 		var pos = getPosition(iid);
 		var ret;
 		var aleft = actual(left);
@@ -663,6 +666,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.conditional = function (iid, result)
 	{
+		this.lastIsWrite = false;
 		var aresult = actual(result);
 		if (isTainted(shadow(result)) && config.logAtCond)
 		{
@@ -673,6 +677,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.literal = function (iid, val, hasGetterSetter)
 	{
+		this.lastIsWrite = false;
 		if (typeof val === 'function')
 		{//sandbox
 			//Log.log(''+val)
@@ -706,13 +711,15 @@ function TaintAnalysis(rule, config)
 	};
 	this.endExecution = function()
 	{
+		/*
 		var res = "";
 		for (var i = 0; i < this.results.length; i++)
 		{
 			res += JSON.stringify(this.results[i]);
 			res += '\n';
 		}
-		Log.log(res);
+		Log.log(res);//*/
+		Log.log(JSON.stringify(this.results));
 	};
 	this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod)
 	{
@@ -751,6 +758,7 @@ function TaintAnalysis(rule, config)
 	const shadowArgs = (args) => Array.prototype.map.call(args, shadow);
 	this.invokeFun = function(iid, f, base, args, result, isConstructor, isMethod)
 	{
+		this.lastIsWrite = false;
 		var position = getPosition(iid);
 		const charAtTaint = (ts, idx) =>
 			strToTaintArr(taintArrToStr(ts).charAt(idx), ts);
@@ -1026,6 +1034,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.getField = function (iid, base, offset)
 	{
+		this.lastIsWrite = false;
 		var pos = getPosition(iid);
 		var abase = actual(base);
 		var aoff = actual(offset);
@@ -1076,6 +1085,7 @@ function TaintAnalysis(rule, config)
 	};
 	this.putField = function (iid, base, offset, val)
 	{
+		this.lastIsWrite = true;
 		const abase = actual(base);
 		const sbase = shadow(base);
 		const aoff = actual(offset);
@@ -1137,12 +1147,24 @@ function TaintAnalysis(rule, config)
 	}
 	this.read = function (iid, name, val)
 	{
+		this.lastIsWrite = false;
 		rwRec(this, iid, name, val, 'read');
 	};
 	this.write = function (iid, name, val)
 	{
+		this.lastIsWrite = true;
 		rwRec(this, iid, name, val, 'write');
 	};
+	this.endExpression = function (iid)
+	{
+		// const pos = getPosition(iid);
+		// const lastRes = this.results[this.results.length-1];
+		// if (this.lastIsWrite && typeof lastRes != 'undefined' && lastRes.type === 'write')
+		// {
+		// 	lastRes.pos = pos.pos;
+		// 	lastRes.file = pos.fname;
+		// }
+	}
 }
 const taintUnit = sandbox.dtaTaintLogic;
 sandbox.analysis = new TaintAnalysis(taintUnit, config);

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<script src="codemirror/lib/codemirror.js"></script>
+	<link rel="stylesheet" href="codemirror/lib/codemirror.css">
+	<script src="codemirror/mode/javascript/javascript.js"></script>
+	<script type="text/javascript">
+	CodeMirror.defaults.lineNumbers = true;
+	function readFileIntoMemory (file, callback)
+	{
+		var reader = new FileReader();
+		reader.onload = function ()
+		{
+			callback(
+			{
+				name: file.name,
+				size: file.size,
+				type: file.type,
+				content: this.result
+			 });
+		};
+		reader.readAsBinaryString(file);
+	}
+	var codeMirrors = null;
+	var allCodes = null;
+	const marks = [];
+	function loadCodes()
+	{
+	if (codeMirrors === null)
+	{
+		codeMirrors = {};
+		allCodes = {};
+		const codes = document.getElementById("codes");
+		for (let i = 0; i < codes.files.length; i++)
+		{
+			readFileIntoMemory(codes.files[i], function (fileInfo)
+			{
+				codeMirrors[fileInfo.name] = CodeMirror(document.body, {
+					value: fileInfo.content,
+					mode: "javascript"
+				});
+				allCodes[fileInfo.name] = fileInfo.content.split('\n');
+			});
+		}
+	}
+	}
+	function adjustWrite(file, pos)
+	{
+		const code = allCodes[file];
+	}
+	function playTaintFlow()
+	{
+		try
+		{
+
+			while (marks.length > 0)
+			{
+				marks.pop().clear();
+			}
+			const results = JSON.parse(document.getElementById("results").value);
+			if (!Array.isArray(results))
+				throw Error("result JSON must be an array");
+
+			const interval = parseInt(document.getElementById("interval").value);
+			var i = 0;
+			function oneFrame()
+			{
+				if (i < results.length)
+				{
+					var bkgColor;
+					var fixedPos;
+					switch (results[i].type)
+					{
+					case 'read':
+						bkgColor = "background-color: #ff3030";
+						break;
+					case 'write':
+						bkgColor = "background-color: #30ff30";
+						const line = results[i].pos[0]-1;
+						const idx = allCodes[results[i].file][line].indexOf(results[i].name);
+						if (idx !== -1)
+						{
+							fixedPos = [line, idx, line, idx + results[i].name.length];
+						}
+						break;
+					case 'log':
+						bkgColor = "";
+						break;
+					case 'source':
+						bkgColor = "background-color: #3030ff";
+						break;
+					case 'sink':
+						bkgColor = "background-color: #3030ff";
+						break;
+					default:
+						throw Error("Invalid type field" + results[i].type);
+					}
+					if (fixedPos)
+					{
+						marks.push(codeMirrors[results[i].file].getDoc().markText(
+							{line: fixedPos[0], ch: fixedPos[1]},
+							{line: fixedPos[2], ch: fixedPos[3]},
+							{css : bkgColor}));
+					}
+					else
+					{
+						marks.push(codeMirrors[results[i].file].getDoc().markText(
+								{line: results[i].pos[0]-1, ch: results[i].pos[1]-1},
+								{line: results[i].pos[2]-1, ch: results[i].pos[3]-1},
+								{css : bkgColor}));
+					}
+					++i;
+					if (bkgColor === "")
+						window.setTimeout(oneFrame, 0);
+					else
+						window.setTimeout(oneFrame, interval);
+				}
+			}
+			window.setTimeout(oneFrame, interval);
+			for (let i = 0; i < results.length; i++)
+			{
+
+			}
+		}
+		catch (e)
+		{
+			alert(e.message);
+		}
+	}
+
+	</script>
+</head>
+<body>
+	<form>
+		<input type="file" id="codes" multiple />
+		<input type="button" value="load" onclick="loadCodes()" />
+		<input type="button" value="play" onclick="playTaintFlow()" />
+		<label>
+		<textarea rows="5" cols="50" id="results"></textarea><br>
+			<input type="text" id="interval" value="500" />
+		</label>
+
+	</form>
+
+</body>
+</html>
